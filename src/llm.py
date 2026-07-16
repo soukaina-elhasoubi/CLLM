@@ -4,30 +4,25 @@ from llm_sdk.llm_sdk import Small_LLM_Model
 
 from src.encoder import Encoder
 
+LogitsCache = dict[tuple[tuple[int, ...], tuple[int, ...]], list[float]]
+
 
 class LLM(BaseModel):
     _llm: Small_LLM_Model = PrivateAttr()
     _encoder: Encoder = PrivateAttr()
     _t_instruction: list[int] | None = PrivateAttr()
 
-    # def __init__(self, llm: Small_LLM_Model, encoder: Encoder):
-    #     super().__init__()
-    #     self._llm = llm
-    #     self._encoder = encoder
-    #     self._t_instruction = None
-    #     print('LLM created.')
     def __init__(self, llm: Small_LLM_Model, encoder: Encoder):
         super().__init__()
 
         self._llm = llm
         self._encoder = encoder
         self._t_instruction = None
+        self._logits_cache: LogitsCache = {}
 
-        # cache utilisé pour éviter de recalculer plusieurs fois
-        # les mêmes logits
-        self._logits_cache = {}
+        print("LLM created.")\
 
-        print("LLM created.")
+
     def next_token(self,
                    tokens: list[int],
                    mask: set[int] | None = None) -> int:
@@ -43,20 +38,7 @@ class LLM(BaseModel):
         options: list[list[int]]
     ) -> list[int]:
         """Returns the best allowed option."""
-        # result: list[int] = []
-        # context = tokens + result
-        # while options:
-        #     allowed: set[int] = {option[0] for option in options}
-        #     next_token = self.next_token(context, allowed)
-        #     result.append(next_token)
-        #     context.append(next_token)
-        #     options = [
-        #         option[1:]
-        #         for option in options
-        #         if option[0] == next_token and len(option) > 1
-        #     ]
-        # return result
-        result = []
+        result: list[int] = []
         context = list(tokens)
 
         while options:
@@ -84,25 +66,6 @@ class LLM(BaseModel):
             new = self._encoder.encode(new)
         self._t_instruction = new
 
-    # def get_logits(self,
-    #                tokens: list[int],
-    #                mask: set[int] | None = None) -> list[float]:
-    #     """
-    #     Returns the list of logits for provided tokens.
-    #     Applies the mask optionally.
-    #     """
-    #     instr = self._t_instruction if self._t_instruction is not None else []
-    #     # lgt = self._llm.get_logits_from_input_ids(instr + tokens)
-    #     key = tuple(instr + tokens)
-
-    #     if key in self._logits_cache:
-    #         lgt = self._logits_cache[key]
-    #     else:
-    #         lgt = self._llm.get_logits_from_input_ids(instr + tokens)
-    #         self._logits_cache[key] = lgt
-    #     if mask is not None:
-    #         lgt = self._apply_mask(mask, lgt)
-    #     return lgt
     def get_logits(
         self,
         tokens: list[int],
@@ -123,7 +86,8 @@ class LLM(BaseModel):
         if mask is not None:
             logits = self._apply_mask(mask, logits)
 
-        return logits
+        # return logits
+        return list(logits) if isinstance(logits, np.ndarray) else logits
 
     def _apply_mask(self,
                     mask: set[int] | list[int],
@@ -133,7 +97,7 @@ class LLM(BaseModel):
         token scores to -infinity.
         """
         # masked = np.full_like(logits, -float('inf'))
-        masked = np.full(
+        masked: np.ndarray = np.full(
             len(logits),
             -float('inf'),
             dtype=float
@@ -142,10 +106,8 @@ class LLM(BaseModel):
             if 0 <= id < len(logits):
                 masked[id] = logits[id]
 
-        return masked.tolist()
-        # for id in mask:
-        #     masked[id] = logits[id]
-        # return list(masked)
+        return list(masked)
+        # return masked.tolist()
 
     @property
     def encoder(self) -> Encoder:

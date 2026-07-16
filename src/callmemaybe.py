@@ -111,10 +111,6 @@ class CallMeMaybe(BaseModel):
             definition += function.t_params[arg_name]
         return definition
 
-    # def add_args(self,
-    #              function: Function,
-    #              tokens: list[int],
-    #              text: str) -> list[int]:
     def add_args(
         self,
         function: Function,
@@ -138,14 +134,10 @@ class CallMeMaybe(BaseModel):
                 tokens += self.encoder.encode('"')
                 continue
 
-            # if arg_type != 'boolean':
-            #     options = self.encoder.encode_words_separated(text)
             if arg_type == 'number':
                 options = cached_numbers
-                # options = self.encoder.encode_numbers(text)
             elif arg_type != 'boolean':
                 options = cached_words
-                # options = self.encoder.encode_words_separated(text)
             else:
                 options = [
                     self.encoder.encode('true'),
@@ -154,21 +146,6 @@ class CallMeMaybe(BaseModel):
 
             if arg_type == 'string':
                 tokens += self.encoder.encode('"')
-
-            # next = self.llm.next_option(tokens, options)
-            # # if arg_type == 'number' or arg_type == 'float':
-            # #     param = self.encoder.decode(next)
-            # #     if param.isdigit():
-            # #         next += self.encoder.encode('.0')
-            # if arg_type in ('number', 'float'):
-            #     param = self.encoder.decode(next)
-
-            #     try:
-            #         value = float(param)
-            #         if value.is_integer() and '.' not in param:
-            #             next += self.encoder.encode('.0')
-            #     except ValueError:
-            #         pass
 
             next = self.llm.next_option(tokens, options)
 
@@ -222,10 +199,8 @@ class CallMeMaybe(BaseModel):
             )
 
         function = self.functions[decoded]
-        # function = self.functions[self.encoder.decode(func_name)]
         tokens += function.t_name
         tokens += self.encoder.encode('", "arguments": {')
-        # self.set_tools()
         self.set_tools(function)
         cached_words = self.encoder.encode_words_separated(prompt)
         cached_numbers = self.encoder.encode_numbers(prompt)
@@ -236,12 +211,10 @@ class CallMeMaybe(BaseModel):
             cached_words,
             cached_numbers
         )
-        # tokens = self.add_args(function, tokens, prompt)
         tokens += self.encoder.encode('}')
 
         raw = self.encoder.decode(tokens)
         tool_json = raw[raw.find('{"name":'):]
-        # print(repr(tool_json))
         data = json.loads(tool_json)
 
         return (

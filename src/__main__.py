@@ -35,20 +35,14 @@ if __name__ == "__main__":
     try:
         args = parse_args()
         llm_model = Small_LLM_Model()
-        # encoder = create_encoder(llm_model.get_path_to_vocabulary_json())
         encoder = create_encoder(llm_model.get_path_to_vocab_file())
         llm = LLM(llm_model, encoder)
         cmm = CallMeMaybe(llm, args.functions_definition)
 
         prompts = None
-        # with open(args.input) as requests:
-        #     prompts = [t['prompt'] for t in json.load(requests)]
-        # output = open(args.output, 'w')
-        # output.write('[\n')
         with open(args.input) as requests:
             prompts = [t['prompt'] for t in json.load(requests)]
 
-        # Crée automatiquement le dossier parent (data/output)
         Path(args.output).parent.mkdir(
             parents=True,
             exist_ok=True
@@ -57,7 +51,6 @@ if __name__ == "__main__":
         output = open(args.output, 'w')
         output.write('[\n')
         for i, p in enumerate(prompts):
-            # print(f'\n{i}. Processing \'{p}\'...')
             if i < len(prompts) - 1:
                 output.write(cmm.process_func(p) + ',\n')
             else:
