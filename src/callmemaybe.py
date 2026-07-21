@@ -97,20 +97,6 @@ class CallMeMaybe(BaseModel):
 
         return self.encoder.encode(r'\w+')
 
-    def encode_definition(self, function: Function) -> list[int]:
-        """Encodes function definition for LLM context."""
-
-        definition = (
-            function.t_name
-            + self.encoder.encode(': ')
-            + function.t_description
-            + self.encoder.encode('\nParameters:\n')
-        )
-        for arg_name in function.param_names:
-            definition += self.encoder.encode(f'\n{arg_name}: ')
-            definition += function.t_params[arg_name]
-        return definition
-
     def add_args(
         self,
         function: Function,
@@ -147,9 +133,36 @@ class CallMeMaybe(BaseModel):
             if arg_type == 'string':
                 tokens += self.encoder.encode('"')
 
+            # print("OPTIONS:")
+            # for opt in options:
+            #     print(opt, "->", self.encoder.decode(opt))
             next = self.llm.next_option(tokens, options)
 
             if arg_type in ('number', 'float'):
+                # param = self.encoder.decode(next).strip()
+
+                # if param.startswith('.'):
+                #     param = '0' + param
+
+                # if param.startswith('-.'):
+                #     param = param.replace('-.', '-0.', 1)
+
+                # if param.startswith('+.'):
+                #     param = param.replace('+.', '0.', 1)
+
+                # if param.startswith('+'):
+                #     param = param[1:]
+
+                # try:
+                #     value = float(param)
+
+                #     if value.is_integer() and '.' not in param:
+                #         param += '.0'
+
+                #     next = self.encoder.encode(param)
+
+                # except ValueError:
+                #     next = self.encoder.encode('0.0')
                 param = self.encoder.decode(next).strip()
 
                 if param.startswith('+'):
@@ -158,13 +171,16 @@ class CallMeMaybe(BaseModel):
                 try:
                     value = float(param)
 
-                    if value.is_integer() and '.' not in param:
-                        param += '.0'
+                    # Toujours produire une représentation JSON canonique
+                    if value.is_integer():
+                        param = f"{value:.1f}"      # 5 -> 5.0
+                    else:
+                        param = str(value)          # -.3 -> -0.3 ; -5. -> -5.0 ; 3.14 -> 3.14
 
                     next = self.encoder.encode(param)
 
                 except ValueError:
-                    next = self.encoder.encode('0.0')
+                    next = self.encoder.encode("0.0")
 
             tokens += next
             if arg_type == 'string':
@@ -215,6 +231,7 @@ class CallMeMaybe(BaseModel):
 
         raw = self.encoder.decode(tokens)
         tool_json = raw[raw.find('{"name":'):]
+        # print(tool_json)
         data = json.loads(tool_json)
 
         return (

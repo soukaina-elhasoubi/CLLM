@@ -143,7 +143,7 @@ class Encoder(BaseModel):
 
             if token_ids:
                 ids.append(token_ids)
-
+        # print(NUMBER_PATTERN.findall(text))
         return ids
 
     def decode(self, tokens: list[int] | int) -> str:
