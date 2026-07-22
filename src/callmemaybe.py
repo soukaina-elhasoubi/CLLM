@@ -112,81 +112,66 @@ class CallMeMaybe(BaseModel):
 
             if i > 0:
                 tokens += self.encoder.encode(', ')
+
             tokens += self.encoder.encode(f'"{arg_name}": ')
 
-            if arg_name == 'regex':
+            if arg_name == "regex":
                 tokens += self.encoder.encode('"')
                 tokens += self.regex_pattern(text)
                 tokens += self.encoder.encode('"')
                 continue
 
-            if arg_type == 'number':
-                options = cached_numbers
-            elif arg_type != 'boolean':
-                options = cached_words
-            else:
-                options = [
-                    self.encoder.encode('true'),
-                    self.encoder.encode('false')
-                    ]
+            if arg_type in ("number", "float"):
 
-            if arg_type == 'string':
-                tokens += self.encoder.encode('"')
+                if cached_numbers:
+                    next_tokens = cached_numbers.pop(0)
+                else:
+                    next_tokens = self.encoder.encode("0.0")
 
-            # print("OPTIONS:")
-            # for opt in options:
-            #     print(opt, "->", self.encoder.decode(opt))
-            next = self.llm.next_option(tokens, options)
+                param = self.encoder.decode(next_tokens).strip()
 
-            if arg_type in ('number', 'float'):
-                # param = self.encoder.decode(next).strip()
+                if param.startswith("."):
+                    param = "0" + param
 
-                # if param.startswith('.'):
-                #     param = '0' + param
+                elif param.startswith("-."):
+                    param = "-0" + param[1:]
 
-                # if param.startswith('-.'):
-                #     param = param.replace('-.', '-0.', 1)
+                elif param.startswith("+."):
+                    param = "+0" + param[1:]
 
-                # if param.startswith('+.'):
-                #     param = param.replace('+.', '0.', 1)
+                if param.endswith("."):
+                    param += "0"
 
-                # if param.startswith('+'):
-                #     param = param[1:]
-
-                # try:
-                #     value = float(param)
-
-                #     if value.is_integer() and '.' not in param:
-                #         param += '.0'
-
-                #     next = self.encoder.encode(param)
-
-                # except ValueError:
-                #     next = self.encoder.encode('0.0')
-                param = self.encoder.decode(next).strip()
-
-                if param.startswith('+'):
+                if param.startswith("+"):
                     param = param[1:]
 
-                try:
-                    value = float(param)
+                if "." not in param and "e" not in param.lower():
+                    param += ".0"
 
-                    # Toujours produire une représentation JSON canonique
-                    if value.is_integer():
-                        param = f"{value:.1f}"      # 5 -> 5.0
-                    else:
-                        param = str(value)          # -.3 -> -0.3 ; -5. -> -5.0 ; 3.14 -> 3.14
+                tokens += self.encoder.encode(param)
+                continue
 
-                    next = self.encoder.encode(param)
+            if arg_type == "boolean":
+                options = [
+                    self.encoder.encode("true"),
+                    self.encoder.encode("false"),
+                ]
 
-                except ValueError:
-                    next = self.encoder.encode("0.0")
+            else:
+                options = cached_words
 
-            tokens += next
-            if arg_type == 'string':
+            if arg_type == "string":
                 tokens += self.encoder.encode('"')
 
-        tokens += self.encoder.encode('}\n')
+            next_tokens = self.llm.next_option(tokens, options)
+
+            tokens += next_tokens
+
+            if arg_type == "string":
+                tokens += self.encoder.encode('"')
+
+        tokens += self.encoder.encode("}\n")
+
         return tokens
 
     def process_func(self, prompt: str) -> str:
@@ -232,12 +217,19 @@ class CallMeMaybe(BaseModel):
         raw = self.encoder.decode(tokens)
         tool_json = raw[raw.find('{"name":'):]
         # print(tool_json)
+
         data = json.loads(tool_json)
+
+        arguments_start = (
+            tool_json.index('"arguments":') + len('"arguments": ')
+            )
+        arguments_text = tool_json[arguments_start:-1].strip()
+        # print(data)
 
         return (
             '\t{\n'
             f'\t\t"prompt": "{prompt}",\n'
             f'\t\t"name": "{data["name"]}",\n'
-            f'\t\t"parameters": {json.dumps(data["arguments"])}\n'
+            f'\t\t"parameters": {arguments_text}\n'
             '\t}'
         )

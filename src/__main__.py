@@ -36,6 +36,11 @@ if __name__ == "__main__":
         args = parse_args()
         llm_model = Small_LLM_Model()
         encoder = create_encoder(llm_model.get_path_to_vocab_file())
+        # encoder.debug("-3")
+        # encoder.debug("-.5")
+        # encoder.debug("-3.")
+        # encoder.debug(".5")
+        # encoder.debug("-.3")
         llm = LLM(llm_model, encoder)
         cmm = CallMeMaybe(llm, args.functions_definition)
 
