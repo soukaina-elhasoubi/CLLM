@@ -31,5 +31,8 @@
   },
   {
     "prompt": "Format template: Say \"hello\" to {name}"
+  },
+  {
+    "prompt": "what is my age ?"
   }
 ]

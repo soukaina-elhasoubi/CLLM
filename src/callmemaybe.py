@@ -47,6 +47,21 @@ class CallMeMaybe(BaseModel):
             for func in json.load(f):
                 functions[func['name']] = Function(func, encoder)
 
+        functions["fn_unknown"] = Function(
+            {
+                "name": "fn_unknown",
+                "description": (
+                    "Use this function only when none of the other "
+                    "functions matches the user's request."
+                ),
+                "parameters": {},
+                "returns": {
+                    "type": "string"
+                }
+            },
+            encoder,
+        )
+
         t_defintions = [t for f in functions.values() for t in f.t_definition]
 
         t_instruction_prefix = encoder.encode(
@@ -190,14 +205,14 @@ class CallMeMaybe(BaseModel):
         func_name = self.llm.next_option(tokens, func_names)
         decoded = self.encoder.decode(func_name)
 
-        if decoded not in self.functions:
-            return (
-                '\t{\n'
-                f'\t\t"prompt": "{prompt}",\n'
-                '\t\t"name": null,\n'
-                '\t\t"parameters": {}\n'
-                '\t}'
-            )
+        # if decoded not in self.functions:
+        #     return (
+        #         '\t{\n'
+        #         f'\t\t"prompt": "{prompt}",\n'
+        #         '\t\t"name": null,\n'
+        #         '\t\t"parameters": {}\n'
+        #         '\t}'
+        #     )
 
         function = self.functions[decoded]
         tokens += function.t_name
