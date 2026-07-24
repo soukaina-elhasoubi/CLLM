@@ -45,6 +45,14 @@ class CallMeMaybe(BaseModel):
         functions = {}
         with open(func_definitons, 'r') as f:
             for func in json.load(f):
+                name = func.get("name", "").strip()
+                if not name:
+                    continue
+                if func["name"] in functions:
+                    raise ValueError(
+                        f"Duplicate function: {func['name']}"
+                    )
+
                 functions[func['name']] = Function(func, encoder)
 
         functions["fn_unknown"] = Function(
@@ -121,6 +129,12 @@ class CallMeMaybe(BaseModel):
         cached_numbers: list[list[int]]
     ) -> list[int]:
         """Generates all arguments for a function call."""
+        SUPPORTED_TYPES = {
+            "number",
+            "float",
+            "string",
+            "boolean",
+        }
 
         for i, arg_name in enumerate(function.param_names):
             arg_type = function.params[arg_name]
@@ -129,6 +143,11 @@ class CallMeMaybe(BaseModel):
                 tokens += self.encoder.encode(', ')
 
             tokens += self.encoder.encode(f'"{arg_name}": ')
+
+            if arg_type not in SUPPORTED_TYPES:
+                raise ValueError(
+                    f"Unsupported parameter type: {arg_type}"
+                )
 
             if arg_name == "regex":
                 tokens += self.encoder.encode('"')
@@ -191,6 +210,15 @@ class CallMeMaybe(BaseModel):
 
     def process_func(self, prompt: str) -> str:
         prompt = escape(prompt)
+
+        if not prompt.strip():
+            return (
+                '\t{\n'
+                '\t\t"prompt": "",\n'
+                '\t\t"name": "fn_unknown",\n'
+                '\t\t"parameters": {}\n'
+                '\t}'
+            )
         text = (
             '<|im_start|>user\n' +
             prompt +
