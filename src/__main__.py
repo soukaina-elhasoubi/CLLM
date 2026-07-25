@@ -26,9 +26,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def create_encoder(vocab_path: str) -> Encoder:
-    with open(vocab_path, 'r', encoding='utf-8') as f:
-        tokens = json.load(f)
-    return Encoder(tokens)
+    try:
+        with open(vocab_path, 'r', encoding='utf-8') as f:
+            tokens = json.load(f)
+        return Encoder(tokens)
+    except Exception as e:
+        print(f"Cannot load vocabulary: {e}")
+        exit(1)
 
 
 if __name__ == "__main__":
@@ -36,11 +40,7 @@ if __name__ == "__main__":
         args = parse_args()
         llm_model = Small_LLM_Model()
         encoder = create_encoder(llm_model.get_path_to_vocab_file())
-        # encoder.debug("-3")
-        # encoder.debug("-.5")
-        # encoder.debug("-3.")
-        # encoder.debug(".5")
-        # encoder.debug("-.3")
+
         llm = LLM(llm_model, encoder)
         cmm = CallMeMaybe(llm, args.functions_definition)
 
@@ -62,15 +62,7 @@ if __name__ == "__main__":
             output.write("[\n")
             output.write(",\n".join(results))
             output.write("\n]")
-        # output = open(args.output, 'w')
-        # output.write('[\n')
-        # for i, p in enumerate(prompts):
-        #     if i < len(prompts) - 1:
-        #         output.write(cmm.process_func(p) + ',\n')
-        #     else:
-        #         output.write(cmm.process_func(p) + '\n')
-        # output.write(']')
-        # output.close()
+
         print('Finished.')
 
     except FileNotFoundError as e:
@@ -80,6 +72,7 @@ if __name__ == "__main__":
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON: {e.msg} " +
               f"at line {e.lineno} column {e.colno}")
+        exit(1)
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")

@@ -305,7 +305,11 @@ class CallMeMaybe(BaseModel):
 
         tool_json = tool_json[:end + 1]
 
-        data = json.loads(tool_json)
+        # data = json.loads(tool_json)
+        try:
+            data = json.loads(tool_json)
+        except json.JSONDecodeError:
+            raise ValueError("LLM generated invalid JSON")
 
         arguments_start = (
             tool_json.index('"arguments":') + len('"arguments": ')
