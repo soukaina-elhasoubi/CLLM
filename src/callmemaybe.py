@@ -44,10 +44,16 @@ class CallMeMaybe(BaseModel):
 
         functions = {}
         with open(func_definitons, 'r') as f:
-            for func in json.load(f):
+            functions_json = json.load(f)
+
+            if not isinstance(functions_json, list):
+                raise ValueError(
+                    "functions_definition must contain a list"
+                )
+            for func in functions_json:
                 name = func.get("name", "").strip()
                 if not name:
-                    continue
+                    raise ValueError("Function name cannot be empty")
                 if func["name"] in functions:
                     raise ValueError(
                         f"Duplicate function: {func['name']}"
@@ -131,6 +137,7 @@ class CallMeMaybe(BaseModel):
         """Generates all arguments for a function call."""
         SUPPORTED_TYPES = {
             "number",
+            "integer",
             "float",
             "string",
             "boolean",
@@ -155,7 +162,31 @@ class CallMeMaybe(BaseModel):
                 tokens += self.encoder.encode('"')
                 continue
 
-            if arg_type in ("number", "float"):
+            if arg_name == "path":
+                tokens += self.encoder.encode('"')
+                tokens += self.encoder.extract_path(text)
+                tokens += self.encoder.encode('"')
+                continue
+
+            if arg_type == "integer":
+
+                if cached_numbers:
+                    next_tokens = cached_numbers.pop(0)
+                else:
+                    next_tokens = self.encoder.encode("0")
+
+                param = self.encoder.decode(next_tokens).strip()
+
+                if "." in param:
+                    param = param.split(".")[0]
+
+                if param.startswith("+"):
+                    param = param[1:]
+
+                tokens += self.encoder.encode(param)
+                continue
+            
+            elif arg_type in ("number", "float"):
 
                 if cached_numbers:
                     next_tokens = cached_numbers.pop(0)
@@ -258,8 +289,21 @@ class CallMeMaybe(BaseModel):
         tokens += self.encoder.encode('}')
 
         raw = self.encoder.decode(tokens)
-        tool_json = raw[raw.find('{"name":'):]
+        start = raw.find('{"name":')
+
+        if start == -1:
+            raise ValueError("Invalid tool call generated")
+
+        tool_json = raw[start:]
+        # tool_json = raw[raw.find('{"name":'):]
         # print(tool_json)
+
+        end = tool_json.rfind("}")
+
+        if end == -1:
+            raise ValueError("Invalid tool call generated")
+
+        tool_json = tool_json[:end + 1]
 
         data = json.loads(tool_json)
 

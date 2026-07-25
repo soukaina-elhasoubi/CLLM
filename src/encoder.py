@@ -144,39 +144,17 @@ class Encoder(BaseModel):
                 ids.append(token_ids)
         # print(NUMBER_PATTERN.findall(text))
         return ids
-    # def encode_numbers(self, text: str) -> list[list[int]]:
-    #     """
-    #     Extracts all numbers from the prompt, normalizes them and
-    #     encodes them for the LLM.
-    #     """
 
-    #     ids: list[list[int]] = []
+    def extract_path(self, text: str) -> list[int]:
+        match = re.search(
+            r'([A-Za-z]:\\[^\s]+|/[^\s]+)',
+            text
+        )
 
-    #     for n in NUMBER_PATTERN.findall(text):
+        if match:
+            return self.encode(match.group(1))
 
-    #         normalized = n
-
-    #         if normalized.startswith('.'):
-    #             normalized = '0' + normalized
-
-    #         elif normalized.startswith('-.'):
-    #             normalized = '-0' + normalized[1:]
-
-    #         elif normalized.startswith('+.'):
-    #             normalized = '+0' + normalized[1:]
-
-    #         if normalized.endswith('.'):
-    #             normalized += '0'
-
-    #         token_ids = self.encode(' ' + normalized)
-
-    #         if not token_ids:
-    #             token_ids = self.encode(normalized)
-
-    #         if token_ids:
-    #             ids.append(token_ids)
-
-    #     return ids
+        return self.encode("")
 
     def decode(self, tokens: list[int] | int) -> str:
         """Translates LLM tokens to human-readable text."""

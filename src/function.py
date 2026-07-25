@@ -22,15 +22,43 @@ class Function(BaseModel):
         self._t_name = encoder.encode(self._name)
         self._description: str = function.get('description', '')
         self._t_description = encoder.encode(self._description)
+
+        parameters = function.get("parameters")
+
+        if not isinstance(parameters, dict):
+            raise ValueError(
+                f"Function '{self._name}' has invalid parameters"
+            )
+
+        for name, info in parameters.items():
+            if "type" not in info:
+                raise ValueError(
+                    f"Parameter '{name}' has no type"
+                )
+
         self._params = {
-            k: v['type']
-            for k, v in function['parameters'].items()
+            k: v["type"]
+            for k, v in parameters.items()
         }
+
         self._t_params = {
-            k: encoder.encode(v['type'])
-            for k, v in function['parameters'].items()
+            k: encoder.encode(v["type"])
+            for k, v in parameters.items()
         }
-        self._t_definition = encoder.encode(self._to_tool_schema())
+
+        returns = function.get("returns")
+
+        if (
+            not isinstance(returns, dict)
+            or "type" not in returns
+        ):
+            raise ValueError(
+                f"Function '{self._name}' has invalid returns"
+            )
+            
+        self._t_definition = encoder.encode(
+            self._to_tool_schema()
+        )
 
     def _to_tool_schema(self) -> str:
         return json.dumps({

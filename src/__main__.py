@@ -53,19 +53,29 @@ if __name__ == "__main__":
             exist_ok=True
         )
 
-        output = open(args.output, 'w')
-        output.write('[\n')
-        for i, p in enumerate(prompts):
-            if i < len(prompts) - 1:
-                output.write(cmm.process_func(p) + ',\n')
-            else:
-                output.write(cmm.process_func(p) + '\n')
-        output.write(']')
-        output.close()
+        results = []
+
+        for p in prompts:
+            results.append(cmm.process_func(p))
+
+        with open(args.output, "w") as output:
+            output.write("[\n")
+            output.write(",\n".join(results))
+            output.write("\n]")
+        # output = open(args.output, 'w')
+        # output.write('[\n')
+        # for i, p in enumerate(prompts):
+        #     if i < len(prompts) - 1:
+        #         output.write(cmm.process_func(p) + ',\n')
+        #     else:
+        #         output.write(cmm.process_func(p) + '\n')
+        # output.write(']')
+        # output.close()
         print('Finished.')
 
     except FileNotFoundError as e:
         print(f"File not found: {e.filename}")
+        exit(1)
 
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON: {e.msg} " +
