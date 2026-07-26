@@ -156,13 +156,14 @@ class CallMeMaybe(BaseModel):
                     f"Unsupported parameter type: {arg_type}"
                 )
 
-            if arg_name == "regex":
+            arg_name_lower = arg_name.lower()
+            if arg_name_lower == "regex":
                 tokens += self.encoder.encode('"')
                 tokens += self.regex_pattern(text)
                 tokens += self.encoder.encode('"')
                 continue
 
-            if arg_name == "path":
+            if arg_name_lower == "path":
                 tokens += self.encoder.encode('"')
                 tokens += self.encoder.extract_path(text)
                 tokens += self.encoder.encode('"')
@@ -185,7 +186,7 @@ class CallMeMaybe(BaseModel):
 
                 tokens += self.encoder.encode(param)
                 continue
-            
+
             elif arg_type in ("number", "float"):
 
                 if cached_numbers:

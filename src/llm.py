@@ -20,8 +20,7 @@ class LLM(BaseModel):
         self._t_instruction = None
         self._logits_cache: LogitsCache = {}
 
-        print("LLM created.")\
-
+        print("LLM created.")
 
     def next_token(self,
                    tokens: list[int],
@@ -42,7 +41,10 @@ class LLM(BaseModel):
         context = list(tokens)
 
         while options:
-            allowed = {o[0] for o in options}
+            allowed = {
+                o[0]
+                for o in options
+                }
 
             next_token = self.next_token(
                 context + result,

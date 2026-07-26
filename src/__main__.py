@@ -44,9 +44,34 @@ if __name__ == "__main__":
         llm = LLM(llm_model, encoder)
         cmm = CallMeMaybe(llm, args.functions_definition)
 
-        prompts = None
+        # prompts = None
+        # with open(args.input) as requests:
+        #     prompts = [t['prompt'] for t in json.load(requests)]
+
         with open(args.input) as requests:
-            prompts = [t['prompt'] for t in json.load(requests)]
+            data = json.load(requests)
+
+        if not isinstance(data, list):
+            raise ValueError(
+                "function_calling_tests must contain a list"
+            )
+
+        if not data:
+            raise ValueError(
+                "function_calling_tests cannot be empty"
+            )
+
+        for item in data:
+            if (
+                not isinstance(item, dict)
+                or "prompt" not in item
+                or not isinstance(item["prompt"], str)
+            ):
+                raise ValueError(
+                    "Each test must contain a string 'prompt'"
+                )
+
+        prompts = [item["prompt"] for item in data]
 
         Path(args.output).parent.mkdir(
             parents=True,
@@ -76,3 +101,4 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"An unexpected error occurred: {str(e)}")
+        exit(1)

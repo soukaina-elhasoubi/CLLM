@@ -55,7 +55,7 @@ class Function(BaseModel):
             raise ValueError(
                 f"Function '{self._name}' has invalid returns"
             )
-            
+
         self._t_definition = encoder.encode(
             self._to_tool_schema()
         )
