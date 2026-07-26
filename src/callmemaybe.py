@@ -27,7 +27,8 @@ REGEX_MAPPING = [
 
 
 def escape(text: str) -> str:
-    """Escapes backslashes and double quotes in the text."""
+    """Escapes characters required for valid JSON strings."""
+
     return text.replace('\\', '\\\\').replace('"', '\\"')
 
 
@@ -40,6 +41,8 @@ class CallMeMaybe(BaseModel):
     t_instruction_suffix: list[int]
 
     def __init__(self, llm: LLM, func_definitons: str) -> None:
+        """Loads function definitions and initializes the prompt templates."""
+
         encoder = llm.encoder
 
         functions = {}
@@ -134,7 +137,8 @@ class CallMeMaybe(BaseModel):
         cached_words: list[list[int]],
         cached_numbers: list[list[int]]
     ) -> list[int]:
-        """Generates all arguments for a function call."""
+        """Generates the arguments for the selected function."""
+
         SUPPORTED_TYPES = {
             "number",
             "integer",
@@ -241,6 +245,8 @@ class CallMeMaybe(BaseModel):
         return tokens
 
     def process_func(self, prompt: str) -> str:
+        """Processes a prompt and returns the corresponding function call."""
+
         prompt = escape(prompt)
 
         if not prompt.strip():

@@ -1,30 +1,49 @@
-*This project has been created as part of the 42 curriculum by sel-haso.*
+*This project has been created as part of the 42 curriculum by **sel-haso**.*
 
 # Call me Maybe
 
 ## Description
 
-**Call me Maybe** is a Python project implementing a lightweight function calling system powered by a local Large Language Model (LLM).
+**Call me Maybe** is a Python project implementing a lightweight function-calling system powered by a local Large Language Model (LLM).
 
-Instead of generating free-form text, the program converts natural language requests into structured JSON function calls. Given a list of available function definitions, it selects the most appropriate function and generates correctly typed arguments while always producing valid JSON output.
+Instead of generating free-form text, the program converts natural language requests into structured JSON function calls. Given a set of function definitions, it selects the most appropriate function and generates arguments that respect the expected parameter types.
 
-The implementation relies on the provided **llm_sdk** wrapper around **Qwen/Qwen3-0.6B** and performs constrained token selection rather than unrestricted text generation.
+The project relies on the provided **llm_sdk** wrapper around **Qwen/Qwen3-0.6B** and uses **constrained decoding** to ensure that only valid function names and argument values are generated.
 
-If no available function matches the user's request, the program falls back to a dedicated **`fn_unknown`** function, allowing every prompt to produce a valid and predictable result.
+Whenever a request cannot be matched to one of the available functions, the program falls back to the dedicated **`fn_unknown`** function, guaranteeing that every prompt produces a valid output.
 
 ---
 
-# Instructions
+# Features
 
-## Requirements
+- Local LLM inference using the provided SDK.
+- Trie-based tokenizer for efficient encoding.
+- Constrained decoding for function selection.
+- Automatic argument generation.
+- Support for:
+  - strings
+  - integers
+  - floating-point numbers
+  - booleans
+  - regular expressions
+  - file paths
+- JSON validation.
+- Input validation.
+- Graceful error handling with `exit(1)`.
+- Logits caching for faster inference.
+- Automatic fallback to `fn_unknown`.
 
-- Python 3.10 or newer
+---
+
+# Requirements
+
+- Python 3.10+
 - uv
-- llm_sdk (provided with the project)
+- llm_sdk (provided)
 
 ---
 
-## Installation
+# Installation
 
 ```bash
 make install
@@ -38,7 +57,9 @@ uv sync
 
 ---
 
-## Run
+# Usage
+
+Run with the default files:
 
 ```bash
 make run
@@ -52,7 +73,7 @@ uv run python -m src
 
 ---
 
-## Run with custom files
+Run with custom files:
 
 ```bash
 uv run python -m src \
@@ -63,7 +84,7 @@ uv run python -m src \
 
 ---
 
-## Debug
+# Debugging
 
 ```bash
 make debug
@@ -71,7 +92,7 @@ make debug
 
 ---
 
-## Static analysis
+# Static analysis
 
 ```bash
 make lint
@@ -79,33 +100,36 @@ make lint
 
 ---
 
-# Algorithm explanation
+# Project workflow
 
-The project follows a constrained decoding pipeline.
+The program follows four main steps.
 
-Instead of asking the language model to freely generate an entire JSON object, generation is divided into two independent steps.
+## 1. Load resources
 
-## 1. Function selection
+The application:
 
-All function definitions are loaded from the JSON file and encoded once during initialization.
+- loads the LLM;
+- loads the tokenizer vocabulary;
+- builds the tokenizer trie;
+- loads every function definition.
 
-A system prompt describing every available tool is built and sent to the model.
-
-The language model is then allowed to choose **only** among the available function names by using:
-
-```python
-llm.next_option(...)
-```
-
-which evaluates only valid candidate token sequences.
-
-If no suitable function can be selected, the fallback function **`fn_unknown`** is used.
+Each function definition is encoded only once during initialization.
 
 ---
 
-## 2. Argument generation
+## 2. Select the function
 
-Once the function has been selected, each parameter is generated independently according to its expected type.
+A system prompt containing every available function is constructed.
+
+The language model is **not** allowed to generate arbitrary text.
+
+Instead, it must choose only among the available function names using constrained decoding.
+
+---
+
+## 3. Generate arguments
+
+After selecting the function, every parameter is generated independently according to its expected type.
 
 ### Strings
 
@@ -113,7 +137,7 @@ Candidate strings are extracted directly from the user's prompt.
 
 ### Numbers
 
-Numbers are extracted using regular expressions and normalized before insertion into JSON.
+Numbers are extracted using regular expressions and normalized before insertion into the JSON output.
 
 Supported formats include:
 
@@ -128,7 +152,7 @@ Supported formats include:
 5.
 ```
 
-which become respectively
+which become:
 
 ```
 12.0
@@ -143,104 +167,123 @@ which become respectively
 
 ### Booleans
 
-Only the two valid JSON values
+Only the valid JSON values
 
 ```
 true
 false
 ```
 
-are proposed.
+can be generated.
 
 ### Regular expressions
 
-Regex parameters are generated from keywords detected inside the user's prompt (digits, letters, vowels, whitespace, punctuation, etc.).
+Regex parameters are inferred from keywords contained in the prompt.
 
-Finally, every generated field is assembled into the final JSON object written to the output file.
+Examples:
 
----
+- digits
+- letters
+- uppercase
+- lowercase
+- vowels
+- whitespace
+- punctuation
 
-# Design decisions
-
-Several implementation choices were made to keep the solution simple, deterministic and compliant with the project requirements.
-
-- A custom `Encoder` was implemented using the vocabulary supplied by `llm_sdk`.
-- The encoder stores its vocabulary inside a trie for efficient token lookup.
-- Function definitions are tokenized only once during initialization.
-- Candidate generation and token selection are separated.
-- The language model never generates arbitrary JSON tokens.
-- `llm.next_option()` always selects among a restricted list of valid candidates.
-- Numeric values are normalized before being inserted into JSON.
-- Pydantic models are used to validate the application's internal objects.
-- A fallback function (`fn_unknown`) guarantees that unknown prompts still produce valid JSON output instead of failing.
 
 ---
 
-# Performance analysis
+## 4. Produce the result
 
-The implementation remains efficient because constrained decoding drastically reduces the search space.
-
-Instead of evaluating the entire vocabulary at every decoding step, the model only evaluates a small number of valid candidates.
-
-Initialization performs the expensive operations only once:
-
-- loading the language model;
-- building the tokenizer trie;
-- encoding every function definition.
-
-During inference, generation is fast because:
-
-- function names are selected from a finite candidate list;
-- strings are extracted directly from the prompt;
-- numbers are pre-extracted and normalized;
-- booleans have only two possible values.
-
-The implementation consistently produces valid JSON while remaining lightweight enough for local execution.
+The generated function call is assembled into a valid JSON object and written to the output file.
 
 ---
 
-# Challenges faced
+# Design choices
 
-The main challenges encountered during development included:
+Several implementation decisions were made to keep the project deterministic and compliant with the subject.
 
-- understanding constrained decoding at the token level;
-- implementing a tokenizer compatible with the SDK vocabulary;
-- extracting structured information from natural language;
-- handling many different numeric formats;
-- generating only schema-compatible JSON;
-- preventing invalid function selections.
-
-A significant challenge was preserving very large numeric values while still producing valid JSON output. The solution was to avoid unnecessary numeric conversions and preserve the original textual representation whenever possible.
-
-Another challenge was handling prompts that do not correspond to any available function. This was solved by introducing the dedicated fallback function `fn_unknown`.
-
----
-
-# Testing strategy
-
-The implementation was validated using both the provided examples and numerous additional edge cases.
-
-Tests covered:
-
-- integer values;
-- floating-point values;
-- signed numbers;
-- decimal values without leading digits;
-- trailing decimal points;
-- extremely large numbers;
-- quoted strings;
-- punctuation;
-- regular-expression generation;
-- boolean parameters;
-- malformed JSON files;
-- missing input files;
-- unknown user requests.
-
-Generated outputs were systematically parsed using Python's JSON parser to verify that every produced object was syntactically valid.
+- Custom tokenizer implemented from the provided vocabulary.
+- Trie structure for efficient token lookup.
+- Function definitions encoded only once.
+- Cached logits to avoid repeated model evaluations.
+- Constrained decoding instead of unrestricted generation.
+- Strict JSON generation.
+- Automatic numeric normalization.
+- Pydantic models for internal data representation.
+- Dedicated fallback function (`fn_unknown`).
 
 ---
 
-# Example usage
+# Input validation
+
+Before processing any request, the application validates every input file.
+
+The program checks:
+
+- input files exist;
+- JSON syntax is valid;
+- vocabulary can be loaded;
+- `functions_definition.json` contains a list;
+- every function has:
+  - a name;
+  - valid parameters;
+  - valid return type;
+- duplicate function names are rejected;
+- `function_calling_tests.json` contains a non-empty list;
+- every test contains a `"prompt"` field of type `string`.
+
+Invalid inputs immediately terminate the program with:
+
+```text
+exit(1)
+```
+
+---
+
+# Error handling
+
+The application explicitly handles:
+
+- missing files;
+- malformed JSON;
+- invalid function definitions;
+- duplicate functions;
+- unsupported parameter types;
+- invalid generated JSON;
+- invalid tool calls;
+- vocabulary loading failures.
+
+Unexpected exceptions also terminate the program safely.
+
+---
+
+# Performance
+
+The implementation minimizes unnecessary computations.
+
+Performance improvements include:
+
+- trie-based token lookup;
+- cached logits;
+- single encoding of function definitions;
+- constrained decoding;
+- pre-extracted numbers;
+- pre-extracted words.
+
+Only valid candidates are evaluated during decoding, significantly reducing the search space.
+
+---
+
+# Limitations
+
+The quality of the generated function depends on the underlying language model.
+
+Although constrained decoding guarantees valid outputs, the selected function may occasionally differ from the user's intention for ambiguous prompts.
+
+---
+
+# Example
 
 Input
 
@@ -265,8 +308,6 @@ Output
 
 Unknown request
 
-Input
-
 ```text
 Book me a flight to Tokyo tomorrow.
 ```
@@ -275,7 +316,7 @@ Output
 
 ```json
 {
-    "prompt": "Book me a flight to Tokyo tomorrow.",
+    "prompt": "What is my age",
     "name": "fn_unknown",
     "parameters": {}
 }
@@ -287,17 +328,17 @@ Output
 
 ```
 .
-├── data/
-│   ├── input/
-│   └── output/
-├── llm_sdk/
-├── src/
+├── data
+│   ├── input
+│   └── output
+├── llm_sdk
+├── src
 │   ├── __main__.py
 │   ├── callmemaybe.py
 │   ├── encoder.py
 │   ├── function.py
 │   ├── llm.py
-│   └── main.py
+│   └── __init__.py
 ├── Makefile
 ├── pyproject.toml
 ├── uv.lock
@@ -308,8 +349,6 @@ Output
 
 # Resources
 
-## Documentation
-
 - https://docs.python.org/3/
 - https://docs.pydantic.dev/
 - https://www.json.org/
@@ -319,14 +358,14 @@ Output
 
 ---
 
-## AI use disclosure
+# AI use disclosure
 
-Artificial intelligence was used as a learning and productivity tool during the development of this project.
+Artificial intelligence was used during the development of this project as a learning tool.
 
-AI was primarily used to:
+AI was mainly used to:
 
-- understand constrained decoding concepts;
-- discuss implementation strategies;
-- identify possible edge cases;
+- understand constrained decoding;
+- identify edge cases;
+- review algorithms.
 
-All proposed solutions were manually reviewed, adapted, tested and integrated by the project author. Every submitted source file was understood and verified before inclusion in the final project.
+All generated suggestions were manually reviewed, adapted, tested and integrated by <i>sel-haso</i> before submission.

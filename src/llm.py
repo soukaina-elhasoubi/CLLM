@@ -13,6 +13,8 @@ class LLM(BaseModel):
     _t_instruction: list[int] | None = PrivateAttr()
 
     def __init__(self, llm: Small_LLM_Model, encoder: Encoder):
+        """Initializes the language model wrapper."""
+
         super().__init__()
 
         self._llm = llm
@@ -62,7 +64,7 @@ class LLM(BaseModel):
         return result
 
     def set_instruction(self, new: list[int] | str) -> None:
-        """Sets the instruction with information for LLM."""
+        """Sets the system instruction used by the model."""
 
         if isinstance(new, str):
             new = self._encoder.encode(new)
@@ -73,6 +75,7 @@ class LLM(BaseModel):
         tokens: list[int],
         mask: set[int] | None = None
     ) -> list[float]:
+        """Returns logits for the given input tokens."""
 
         instr = tuple(self._t_instruction) if self._t_instruction else ()
         key = (instr, tuple(tokens))
@@ -88,17 +91,13 @@ class LLM(BaseModel):
         if mask is not None:
             logits = self._apply_mask(mask, logits)
 
-        # return logits
         return list(logits) if isinstance(logits, np.ndarray) else logits
 
     def _apply_mask(self,
                     mask: set[int] | list[int],
                     logits: list[float]) -> list[float]:
-        """
-        Returns logits with mask applied by setting all forbidden
-        token scores to -infinity.
-        """
-        # masked = np.full_like(logits, -float('inf'))
+        """Masks all tokens that are not allowed."""
+
         masked: np.ndarray = np.full(
             len(logits),
             -float('inf'),
@@ -109,8 +108,9 @@ class LLM(BaseModel):
                 masked[id] = logits[id]
 
         return list(masked)
-        # return masked.tolist()
 
     @property
     def encoder(self) -> Encoder:
+        """Returns the tokenizer used by the model."""
+
         return self._encoder

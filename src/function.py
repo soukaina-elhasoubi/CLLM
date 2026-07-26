@@ -17,6 +17,8 @@ class Function(BaseModel):
     def __init__(self,
                  function: dict[str, Any],
                  encoder: Encoder):
+        """Builds a function definition from its JSON description."""
+
         super().__init__()
         self._name: str = function['name']
         self._t_name = encoder.encode(self._name)
@@ -61,6 +63,8 @@ class Function(BaseModel):
         )
 
     def _to_tool_schema(self) -> str:
+        """Returns the function as a JSON tool schema."""
+
         return json.dumps({
             "name": self._name,
             "description": self._description,

@@ -19,6 +19,8 @@ class Encoder(BaseModel):
     _vocab: list[str | None] = PrivateAttr()
 
     def __init__(self, tokens: dict[str, int]):
+        """Builds the vocabulary and trie from tokenizer tokens."""
+
         vocab: list[str | None] = [None] * len(tokens)
         trie: dict[str, Any] = {}
 
@@ -40,7 +42,7 @@ class Encoder(BaseModel):
         print('Encoder created.')
 
     def encode(self, text: str) -> list[int]:
-        """Translates human text to a list of tokens for LLM."""
+        """Encodes text into tokenizer ids."""
 
         text = standart_to_special(text)
 
@@ -70,7 +72,7 @@ class Encoder(BaseModel):
         return ids
 
     def encode_words(self, text: str) -> set[int]:
-        """Returns all possible tokens from the string"""
+        """Extracts unique token ids for the prompt words."""
 
         ids = set()
         words = WORD_PATTERN.findall(text)
@@ -92,7 +94,7 @@ class Encoder(BaseModel):
         return ids
 
     def encode_words_separated(self, text: str) -> list[list[int]]:
-        """Returns tokenized prompt fragments."""
+        """Encodes prompt words as separate token sequences."""
 
         ids: list[list[int]] = []
 
@@ -123,11 +125,7 @@ class Encoder(BaseModel):
         return ids
 
     def encode_numbers(self, text: str) -> list[list[int]]:
-        """
-        Returns tokenized numbers found in text.
-        Tries first with a leading space because BBPE models
-        often tokenize numbers as ' -3' rather than '-3'.
-        """
+        """Extracts and encodes numeric values from the prompt."""
 
         ids: list[list[int]] = []
 
@@ -146,6 +144,8 @@ class Encoder(BaseModel):
         return ids
 
     def extract_path(self, text: str) -> list[int]:
+        """Extracts and encodes a filesystem path."""
+
         match = re.search(
             r'([A-Za-z]:\\[^\s]+|/[^\s]+)',
             text
@@ -157,7 +157,7 @@ class Encoder(BaseModel):
         return self.encode("")
 
     def decode(self, tokens: list[int] | int) -> str:
-        """Translates LLM tokens to human-readable text."""
+        """Decodes tokenizer ids into text."""
 
         if isinstance(tokens, int):
             return self._vocab[tokens] or ''
@@ -170,6 +170,8 @@ class Encoder(BaseModel):
         )
 
     def debug(self, text: str) -> None:
+        """Prints the encoding and decoding of a text."""
+
         ids = self.encode(text)
         print(text)
         print(ids)
@@ -178,6 +180,8 @@ class Encoder(BaseModel):
 
 
 def special_to_standart(text: str) -> str:
+    """Converts tokenizer special symbols to plain text."""
+
     return (
         text
         .replace('Ġ', ' ')
@@ -187,6 +191,8 @@ def special_to_standart(text: str) -> str:
 
 
 def standart_to_special(text: str) -> str:
+    """Converts plain text to tokenizer special symbols."""
+
     return (
         text
         .replace(' ', 'Ġ')

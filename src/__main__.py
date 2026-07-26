@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
+    """Parses the command-line arguments."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--functions_definition',
@@ -26,6 +28,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def create_encoder(vocab_path: str) -> Encoder:
+    """Loads the tokenizer vocabulary and builds the encoder."""
+
     try:
         with open(vocab_path, 'r', encoding='utf-8') as f:
             tokens = json.load(f)
@@ -43,10 +47,6 @@ if __name__ == "__main__":
 
         llm = LLM(llm_model, encoder)
         cmm = CallMeMaybe(llm, args.functions_definition)
-
-        # prompts = None
-        # with open(args.input) as requests:
-        #     prompts = [t['prompt'] for t in json.load(requests)]
 
         with open(args.input) as requests:
             data = json.load(requests)
