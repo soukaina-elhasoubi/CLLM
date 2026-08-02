@@ -11,6 +11,8 @@ class LLM(BaseModel):
     _llm: Small_LLM_Model = PrivateAttr()
     _encoder: Encoder = PrivateAttr()
     _t_instruction: list[int] | None = PrivateAttr()
+    _logits_cache_hits: int = PrivateAttr()
+    _logits_cache_misses: int = PrivateAttr()
 
     def __init__(self, llm: Small_LLM_Model, encoder: Encoder):
         """Initializes the language model wrapper."""
@@ -21,6 +23,8 @@ class LLM(BaseModel):
         self._encoder = encoder
         self._t_instruction = None
         self._logits_cache: LogitsCache = {}
+        self._logits_cache_hits = 0
+        self._logits_cache_misses = 0
 
         print("LLM created.")
 
@@ -107,8 +111,10 @@ class LLM(BaseModel):
         key = (instr, tuple(tokens))
 
         if key in self._logits_cache:
+            self._logits_cache_hits += 1
             logits = self._logits_cache[key]
         else:
+            self._logits_cache_misses += 1
             logits = self._llm.get_logits_from_input_ids(
                 list(instr) + tokens
             )
@@ -134,6 +140,15 @@ class LLM(BaseModel):
                 masked[id] = logits[id]
 
         return list(masked)
+
+    def cache_stats(self) -> dict[str, int]:
+        """Returns simple cache-hit and cache-miss counters."""
+
+        return {
+            "hits": self._logits_cache_hits,
+            "misses": self._logits_cache_misses,
+            "entries": len(self._logits_cache),
+        }
 
     @property
     def encoder(self) -> Encoder:

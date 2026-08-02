@@ -24,6 +24,16 @@ def parse_args() -> argparse.Namespace:
         '--output',
         default='data/output/function_calling_results.json'
     )
+    parser.add_argument(
+        '--model_name',
+        default='Qwen/Qwen3-0.6B',
+        help='Model identifier to load through the local SDK.'
+    )
+    parser.add_argument(
+        '--device',
+        default=None,
+        help='Optional torch device override for the SDK loader.'
+    )
     return parser.parse_args()
 
 
@@ -42,7 +52,10 @@ def create_encoder(vocab_path: str) -> Encoder:
 if __name__ == "__main__":
     try:
         args = parse_args()
-        llm_model = Small_LLM_Model()
+        llm_model = Small_LLM_Model(
+            model_name=args.model_name,
+            device=args.device,
+        )
         encoder = create_encoder(llm_model.get_path_to_vocab_file())
 
         llm = LLM(llm_model, encoder)
@@ -78,10 +91,7 @@ if __name__ == "__main__":
             exist_ok=True
         )
 
-        results = []
-
-        for p in prompts:
-            results.append(cmm.process_func(p))
+        results = cmm.process_batch(prompts)
 
         with open(args.output, "w") as output:
             output.write("[\n")

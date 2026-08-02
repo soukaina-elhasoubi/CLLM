@@ -164,36 +164,60 @@ class CallMeMaybe(BaseModel):
             "float",
             "string",
             "boolean",
+            "object",
+            "array",
         }
 
-        for i, arg_name in enumerate(function.param_names):
-            arg_type = function.params[arg_name]
-
-            if i > 0:
-                tokens += self.encoder.encode(', ')
-
-            tokens += self.encoder.encode(f'"{arg_name}": ')
+        def add_value(
+            schema: dict[str, object] | str,
+            current_tokens: list[int],
+        ) -> list[int]:
+            if isinstance(schema, str):
+                arg_type = schema
+            elif isinstance(schema, dict):
+                arg_type = schema.get("type", "string")
+            else:
+                raise ValueError("Unsupported schema value.")
 
             if arg_type not in SUPPORTED_TYPES:
                 raise ValueError(
                     f"Unsupported parameter type: {arg_type}"
                 )
 
-            arg_name_lower = arg_name.lower()
+            if arg_type == "object":
+                current_tokens += self.encoder.encode('{')
+                properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+                first = True
+                for prop_name, prop_schema in properties.items():
+                    if not first:
+                        current_tokens += self.encoder.encode(', ')
+                    current_tokens += self.encoder.encode(f'"{prop_name}": ')
+                    current_tokens = add_value(prop_schema, current_tokens)
+                    first = False
+                current_tokens += self.encoder.encode('}')
+                return current_tokens
+
+            if arg_type == "array":
+                current_tokens += self.encoder.encode('[')
+                items = schema.get("items", {"type": "string"}) if isinstance(schema, dict) else {"type": "string"}
+                current_tokens = add_value(items, current_tokens)
+                current_tokens += self.encoder.encode(']')
+                return current_tokens
+
+            arg_name_lower = str(schema).lower()
             if arg_name_lower == "regex":
-                tokens += self.encoder.encode('"')
-                tokens += self.regex_pattern(text)
-                tokens += self.encoder.encode('"')
-                continue
+                current_tokens += self.encoder.encode('"')
+                current_tokens += self.regex_pattern(text)
+                current_tokens += self.encoder.encode('"')
+                return current_tokens
 
             if arg_name_lower == "path":
-                tokens += self.encoder.encode('"')
-                tokens += self.encoder.extract_path(text)
-                tokens += self.encoder.encode('"')
-                continue
+                current_tokens += self.encoder.encode('"')
+                current_tokens += self.encoder.extract_path(text)
+                current_tokens += self.encoder.encode('"')
+                return current_tokens
 
             if arg_type == "integer":
-
                 if cached_numbers:
                     next_tokens = cached_numbers.pop(0)
                     param = self.encoder.decode(next_tokens).strip()
@@ -206,11 +230,10 @@ class CallMeMaybe(BaseModel):
                 if param.startswith("+"):
                     param = param[1:]
 
-                tokens += self.encoder.encode(param)
-                continue
+                current_tokens += self.encoder.encode(param)
+                return current_tokens
 
-            elif arg_type in ("number", "float"):
-
+            if arg_type in ("number", "float"):
                 if cached_numbers:
                     next_tokens = cached_numbers.pop(0)
                     param = self.encoder.decode(next_tokens).strip()
@@ -219,10 +242,8 @@ class CallMeMaybe(BaseModel):
 
                 if param.startswith("."):
                     param = "0" + param
-
                 elif param.startswith("-."):
                     param = "-0" + param[1:]
-
                 elif param.startswith("+."):
                     param = "+0" + param[1:]
 
@@ -235,15 +256,14 @@ class CallMeMaybe(BaseModel):
                 if "." not in param and "e" not in param.lower():
                     param += ".0"
 
-                tokens += self.encoder.encode(param)
-                continue
+                current_tokens += self.encoder.encode(param)
+                return current_tokens
 
             if arg_type == "boolean":
                 options = [
                     self.encoder.encode("true"),
                     self.encoder.encode("false"),
                 ]
-
             else:
                 seen = set()
                 options = []
@@ -256,26 +276,25 @@ class CallMeMaybe(BaseModel):
 
                 if not options:
                     options = [self.encoder.encode("")]
-                # seen = set()
-
-                # options = []
-
-                # for word in cached_words:
-                #     t = tuple(word)
-
-                #     if t not in seen:
-                #         options.append(word)
-                #         seen.add(t)
 
             if arg_type == "string":
-                tokens += self.encoder.encode('"')
+                current_tokens += self.encoder.encode('"')
 
-            next_tokens = self.llm.next_option(tokens, options)
-
-            tokens += next_tokens
+            next_tokens = self.llm.next_option(current_tokens, options)
+            current_tokens += next_tokens
 
             if arg_type == "string":
-                tokens += self.encoder.encode('"')
+                current_tokens += self.encoder.encode('"')
+            return current_tokens
+
+        for i, arg_name in enumerate(function.param_names):
+            arg_schema = function.params[arg_name]
+
+            if i > 0:
+                tokens += self.encoder.encode(', ')
+
+            tokens += self.encoder.encode(f'"{arg_name}": ')
+            tokens = add_value(arg_schema, tokens)
 
         tokens += self.encoder.encode("}\n")
 
@@ -307,6 +326,33 @@ class CallMeMaybe(BaseModel):
             for line in wrapped[1:]:
                 print(f"| {'':<24} | {line:<{width - 30}} |")
         print(border)
+
+    def process_batch(self, prompts: list[str]) -> list[str]:
+        """Processes many prompts while reusing already computed results."""
+
+        results: list[str] = []
+        prompt_cache: dict[str, str] = {}
+
+        for prompt in prompts:
+            cleaned_prompt = escape(prompt)
+            if cleaned_prompt in prompt_cache:
+                results.append(prompt_cache[cleaned_prompt])
+                continue
+
+            try:
+                result = self.process_func(prompt)
+            except Exception:
+                result = (
+                    '\t{\n'
+                    '\t\t"prompt": "' + prompt + '",\n'
+                    '\t\t"name": "fn_unknown",\n'
+                    '\t\t"parameters": {}\n'
+                    '\t}'
+                )
+            prompt_cache[cleaned_prompt] = result
+            results.append(result)
+
+        return results
 
     def process_func(self, prompt: str) -> str:
         """Processes a prompt and returns the corresponding function call."""
