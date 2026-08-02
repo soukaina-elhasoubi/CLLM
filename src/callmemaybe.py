@@ -27,9 +27,7 @@ REGEX_MAPPING = [
 
 
 def escape(text: str) -> str:
-    """Escapes characters required for valid JSON strings."""
-
-    return text.replace('\\', '\\\\').replace('"', '\\"')
+    return json.dumps(text)[1:-1]
 
 
 class CallMeMaybe(BaseModel):
@@ -129,6 +127,27 @@ class CallMeMaybe(BaseModel):
 
         return self.encoder.encode(r'\w+')
 
+    def select_relevant_numbers(
+        self,
+        function: Function,
+        cached_numbers: list[list[int]],
+    ) -> list[list[int]]:
+        """Keeps only the numbers relevant to the selected function."""
+
+        numeric_param_count = sum(
+            1
+            for arg_name in function.param_names
+            if function.params[arg_name] in {"integer", "number", "float"}
+        )
+
+        if numeric_param_count <= 0 or not cached_numbers:
+            return cached_numbers
+
+        if len(cached_numbers) <= numeric_param_count:
+            return cached_numbers
+
+        return cached_numbers[-numeric_param_count:]
+
     def add_args(
         self,
         function: Function,
@@ -177,10 +196,9 @@ class CallMeMaybe(BaseModel):
 
                 if cached_numbers:
                     next_tokens = cached_numbers.pop(0)
+                    param = self.encoder.decode(next_tokens).strip()
                 else:
-                    next_tokens = self.encoder.encode("0")
-
-                param = self.encoder.decode(next_tokens).strip()
+                    param = "0"
 
                 if "." in param:
                     param = param.split(".")[0]
@@ -195,10 +213,9 @@ class CallMeMaybe(BaseModel):
 
                 if cached_numbers:
                     next_tokens = cached_numbers.pop(0)
+                    param = self.encoder.decode(next_tokens).strip()
                 else:
-                    next_tokens = self.encoder.encode("0.0")
-
-                param = self.encoder.decode(next_tokens).strip()
+                    param = "0.0"
 
                 if param.startswith("."):
                     param = "0" + param
@@ -228,7 +245,27 @@ class CallMeMaybe(BaseModel):
                 ]
 
             else:
-                options = cached_words
+                seen = set()
+                options = []
+
+                for word in cached_words:
+                    t = tuple(word)
+                    if t not in seen:
+                        options.append(word)
+                        seen.add(t)
+
+                if not options:
+                    options = [self.encoder.encode("")]
+                # seen = set()
+
+                # options = []
+
+                # for word in cached_words:
+                #     t = tuple(word)
+
+                #     if t not in seen:
+                #         options.append(word)
+                #         seen.add(t)
 
             if arg_type == "string":
                 tokens += self.encoder.encode('"')
@@ -243,6 +280,33 @@ class CallMeMaybe(BaseModel):
         tokens += self.encoder.encode("}\n")
 
         return tokens
+
+    def _print_trace_box(
+        self,
+        title: str,
+        rows: list[tuple[str, str]]
+    ) -> None:
+        """Print a clean, readable trace block for the generation process."""
+
+        width = 92
+        border = "+" + "-" * (width - 2) + "+"
+        print()
+        print(border)
+        print(f"| {title.center(width - 4)} |")
+        print(border)
+
+        for label, value in rows:
+            display = str(value)
+            wrapped = [
+                display[i:i + (width - 30)]
+                for i in range(0, len(display), width - 30)
+            ] or [""]
+            print(
+                f"| {label:<24} | {wrapped[0]:<{width - 30}} |"
+            )
+            for line in wrapped[1:]:
+                print(f"| {'':<24} | {line:<{width - 30}} |")
+        print(border)
 
     def process_func(self, prompt: str) -> str:
         """Processes a prompt and returns the corresponding function call."""
@@ -263,29 +327,62 @@ class CallMeMaybe(BaseModel):
             '\n<|im_end|>\n'
             '<|im_start|>assistant\n'
             '<tool_call>\n'
-            '{"name": "'
+            '{"name": '
         )
         tokens = self.encoder.encode(text)
         self.set_tools()
-        func_names = [f.t_name for f in self.functions.values()]
-        func_name = self.llm.next_option(tokens, func_names)
-        decoded = self.encoder.decode(func_name)
+        func_names = [
+            self.encoder.encode(f'"{f.name}"')
+            for f in self.functions.values()
+        ]
 
-        # if decoded not in self.functions:
-        #     return (
-        #         '\t{\n'
-        #         f'\t\t"prompt": "{prompt}",\n'
-        #         '\t\t"name": null,\n'
-        #         '\t\t"parameters": {}\n'
-        #         '\t}'
-        #     )
+        self._print_trace_box(
+            "Generation trace",
+            [
+                ("Prompt", prompt),
+                (
+                    "Function candidates",
+                    ", ".join(f.name for f in self.functions.values()),
+                ),
+            ],
+        )
+
+        func_name = self.llm.next_option(tokens, func_names)
+        decoded = self.encoder.decode(func_name).strip('"')
+
+        self._print_trace_box(
+            "Function selection",
+            [
+                ("Chosen function", decoded),
+                ("Raw candidate", self.encoder.decode(func_name)),
+            ],
+        )
 
         function = self.functions[decoded]
-        tokens += function.t_name
-        tokens += self.encoder.encode('", "arguments": {')
+        tokens += func_name
+        tokens += self.encoder.encode(', "arguments": {')
         self.set_tools(function)
         cached_words = self.encoder.encode_words_separated(prompt)
-        cached_numbers = self.encoder.encode_numbers(prompt)
+        cached_numbers = self.select_relevant_numbers(
+            function,
+            self.encoder.encode_numbers(prompt),
+        )
+
+        self._print_trace_box(
+            "Argument context",
+            [
+                ("Parameter names", ", ".join(function.param_names)),
+                (
+                    "Words extracted",
+                    str([self.encoder.decode(w) for w in cached_words]),
+                ),
+                (
+                    "Numbers extracted",
+                    str([self.encoder.decode(n) for n in cached_numbers]),
+                ),
+            ],
+        )
+
         tokens = self.add_args(
             function,
             tokens,
@@ -297,6 +394,11 @@ class CallMeMaybe(BaseModel):
 
         raw = self.encoder.decode(tokens)
         start = raw.find('{"name":')
+
+        self._print_trace_box(
+            "Final assembled payload",
+            [("JSON", raw[start:])],
+        )
 
         if start == -1:
             raise ValueError("Invalid tool call generated")

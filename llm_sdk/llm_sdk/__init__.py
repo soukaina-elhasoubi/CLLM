@@ -28,6 +28,9 @@ class Small_LLM_Model:
         usage reasonable; on CPU we keep ``float32`` for maximum compatibility.
     """
 
+# Qwen/Qwen2-1.5B
+# Qwen/Qwen2.5-1.5B
+
     def __init__(
         self,
         model_name: str = "Qwen/Qwen3-0.6B",

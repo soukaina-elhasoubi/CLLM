@@ -39,27 +39,53 @@ class LLM(BaseModel):
         options: list[list[int]]
     ) -> list[int]:
         """Returns the best allowed option."""
+
+        decoded_options = []
+        for option in options:
+            if not option:
+                continue
+            decoded = self._encoder.decode(option)
+            decoded_options.append((decoded, list(option)))
+
+        cleaned: list[list[int]] = []
+        for decoded, option in decoded_options:
+            if any(
+                other_decoded != decoded and
+                other_decoded.startswith(decoded)
+                for other_decoded, _ in decoded_options
+            ):
+                continue
+            cleaned.append(option)
+
         result: list[int] = []
         context = list(tokens)
+        candidates = cleaned
 
-        while options:
+        while candidates:
             allowed = {
-                o[0]
-                for o in options
-                }
+                option[0]
+                for option in candidates
+                if option
+            }
 
-            next_token = self.next_token(
+            if not allowed:
+                break
+
+            token = self.next_token(
                 context + result,
                 allowed
             )
 
-            result.append(next_token)
+            result.append(token)
 
-            options = [
-                o[1:]
-                for o in options
-                if o[0] == next_token and len(o) > 1
-            ]
+            new_candidates = []
+
+            for option in candidates:
+                if option and option[0] == token:
+                    if len(option) > 1:
+                        new_candidates.append(option[1:])
+
+            candidates = new_candidates
 
         return result
 

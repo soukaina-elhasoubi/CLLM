@@ -10,7 +10,7 @@ WORD_PATTERN = re.compile(r'''
 ''', re.VERBOSE)
 
 NUMBER_PATTERN = re.compile(
-    r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)'
+    r'(?<![\w.])[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?![\w.])'
 )
 
 
