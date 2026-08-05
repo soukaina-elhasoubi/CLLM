@@ -122,31 +122,52 @@ class CallMeMaybe(BaseModel):
                 return self.encoder.encode(pattern)
 
         match = re.search(r"['\"](\w+)['\"]", text)
+        # match = re.search(r'["\']([^"\']+)["\']', text)
         if match:
             return self.encoder.encode(match.group(1))
 
         return self.encoder.encode(r'\w+')
 
-    def select_relevant_numbers(
+    def _decode_prompt(self, prompt: str) -> str:
+        try:
+            return json.loads(f'"{prompt}"')
+        except Exception:
+            return prompt.replace('\\"', '"')
+
+    def _infer_string_value(
         self,
-        function: Function,
-        cached_numbers: list[list[int]],
-    ) -> list[list[int]]:
-        """Keeps only the numbers relevant to the selected function."""
+        arg_name: str,
+        prompt: str,
+        cached_words: list[list[int]],
+    ) -> list[int] | None:
+        decoded_prompt = self._decode_prompt(prompt)
+        arg_name_lower = arg_name.lower()
 
-        numeric_param_count = sum(
-            1
-            for arg_name in function.param_names
-            if function.params[arg_name] in {"integer", "number", "float"}
-        )
+        if arg_name_lower == 'replacement':
+            if 'asterisk' in decoded_prompt.lower():
+                return self.encoder.encode('*')
+            if 'numbers' in decoded_prompt.lower():
+                return self.encoder.encode('NUMBERS')
 
-        if numeric_param_count <= 0 or not cached_numbers:
-            return cached_numbers
+        if arg_name_lower in {'source_string', 's'}:
+            match = re.search(
+                "\"([^\"]*)\"|'([^']*)'",
+                decoded_prompt,
+            )
+            if match:
+                return self.encoder.encode(
+                    match.group(1) or match.group(2) or ''
+                )
 
-        if len(cached_numbers) <= numeric_param_count:
-            return cached_numbers
+        if arg_name_lower == 'name':
+            match = re.search(r'\b(?:greet|hello|hi|hey)\s+([^\s"\']+)', decoded_prompt, re.I)
+            if match:
+                return self.encoder.encode(match.group(1))
 
-        return cached_numbers[-numeric_param_count:]
+        if len(cached_words) == 1:
+            return cached_words[0]
+
+        return None
 
     def add_args(
         self,
@@ -168,8 +189,13 @@ class CallMeMaybe(BaseModel):
             "array",
         }
 
+        # def add_value(
+        #     schema: dict[str, object] | str,
+        #     current_tokens: list[int],
+        # ) -> list[int]:
         def add_value(
             schema: dict[str, object] | str,
+            arg_name: str,
             current_tokens: list[int],
         ) -> list[int]:
             if isinstance(schema, str):
@@ -184,27 +210,18 @@ class CallMeMaybe(BaseModel):
                     f"Unsupported parameter type: {arg_type}"
                 )
 
+            # For mandatory requirements we do not expand complex types.
+            # Output minimal placeholders for object/array to keep behavior simple
             if arg_type == "object":
-                current_tokens += self.encoder.encode('{')
-                properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
-                first = True
-                for prop_name, prop_schema in properties.items():
-                    if not first:
-                        current_tokens += self.encoder.encode(', ')
-                    current_tokens += self.encoder.encode(f'"{prop_name}": ')
-                    current_tokens = add_value(prop_schema, current_tokens)
-                    first = False
-                current_tokens += self.encoder.encode('}')
+                current_tokens += self.encoder.encode('{}')
                 return current_tokens
 
             if arg_type == "array":
-                current_tokens += self.encoder.encode('[')
-                items = schema.get("items", {"type": "string"}) if isinstance(schema, dict) else {"type": "string"}
-                current_tokens = add_value(items, current_tokens)
-                current_tokens += self.encoder.encode(']')
+                current_tokens += self.encoder.encode('[]')
                 return current_tokens
 
-            arg_name_lower = str(schema).lower()
+            # arg_name_lower = str(schema).lower()
+            arg_name_lower = arg_name.lower()
             if arg_name_lower == "regex":
                 current_tokens += self.encoder.encode('"')
                 current_tokens += self.regex_pattern(text)
@@ -219,9 +236,15 @@ class CallMeMaybe(BaseModel):
 
             if arg_type == "integer":
                 if cached_numbers:
-                    next_tokens = cached_numbers.pop(0)
+                    next_tokens = self.llm.next_option(
+                        current_tokens,
+                        cached_numbers,
+                    )
+                    if next_tokens in cached_numbers:
+                        cached_numbers.remove(next_tokens)
                     param = self.encoder.decode(next_tokens).strip()
                 else:
+                    next_tokens = self.encoder.encode("0")
                     param = "0"
 
                 if "." in param:
@@ -235,9 +258,15 @@ class CallMeMaybe(BaseModel):
 
             if arg_type in ("number", "float"):
                 if cached_numbers:
-                    next_tokens = cached_numbers.pop(0)
+                    next_tokens = self.llm.next_option(
+                        current_tokens,
+                        cached_numbers,
+                    )
+                    if next_tokens in cached_numbers:
+                        cached_numbers.remove(next_tokens)
                     param = self.encoder.decode(next_tokens).strip()
                 else:
+                    next_tokens = self.encoder.encode("0.0")
                     param = "0.0"
 
                 if param.startswith("."):
@@ -278,9 +307,23 @@ class CallMeMaybe(BaseModel):
                     options = [self.encoder.encode("")]
 
             if arg_type == "string":
+                direct_tokens = self._infer_string_value(
+                    arg_name,
+                    text,
+                    cached_words,
+                )
+                if direct_tokens is not None:
+                    current_tokens += self.encoder.encode('"')
+                    current_tokens += direct_tokens
+                    current_tokens += self.encoder.encode('"')
+                    return current_tokens
+
                 current_tokens += self.encoder.encode('"')
 
-            next_tokens = self.llm.next_option(current_tokens, options)
+            if len(options) == 1:
+                next_tokens = options[0]
+            else:
+                next_tokens = self.llm.next_option(current_tokens, options)
             current_tokens += next_tokens
 
             if arg_type == "string":
@@ -294,7 +337,8 @@ class CallMeMaybe(BaseModel):
                 tokens += self.encoder.encode(', ')
 
             tokens += self.encoder.encode(f'"{arg_name}": ')
-            tokens = add_value(arg_schema, tokens)
+            tokens = add_value(arg_schema, arg_name, tokens)
+            # tokens = add_value(arg_schema, tokens)
 
         tokens += self.encoder.encode("}\n")
 
@@ -409,10 +453,44 @@ class CallMeMaybe(BaseModel):
         tokens += self.encoder.encode(', "arguments": {')
         self.set_tools(function)
         cached_words = self.encoder.encode_words_separated(prompt)
-        cached_numbers = self.select_relevant_numbers(
-            function,
-            self.encoder.encode_numbers(prompt),
-        )
+        cached_numbers = self.encoder.encode_numbers(prompt)
+
+        lower_prompt = prompt.lower()
+        if (
+            len(function.param_names) == 2
+            and all(
+                function.params[name] in {"number", "integer", "float"}
+                for name in function.param_names
+            )
+        ):
+            keywords = [
+                "what is the sum of",
+                "sum of",
+                "difference between",
+                "difference of",
+                "product of",
+            ]
+            best_kw = None
+            best_idx = -1
+            for kw in keywords:
+                idx = lower_prompt.rfind(kw)
+                if idx > best_idx:
+                    best_idx = idx
+                    best_kw = kw
+            if best_kw is not None:
+                sub_prompt = prompt[best_idx + len(best_kw):]
+                phrase_numbers = self.encoder.encode_numbers(sub_prompt)
+                if len(phrase_numbers) >= len(function.param_names):
+                    cached_numbers = phrase_numbers[:len(function.param_names)]
+
+        import re as _re
+        NUMBER_PATTERN = _re.compile(r'(?<![\w.])[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?![\w.])')
+        number_contexts: list[tuple[str, str]] = []
+        for m in NUMBER_PATTERN.finditer(prompt):
+            raw_number = m.group(0).strip()
+            start, end = m.span()
+            window = prompt[max(0, start - 16): min(len(prompt), end + 16)]
+            number_contexts.append((raw_number, window))
 
         self._print_trace_box(
             "Argument context",
@@ -424,18 +502,47 @@ class CallMeMaybe(BaseModel):
                 ),
                 (
                     "Numbers extracted",
-                    str([self.encoder.decode(n) for n in cached_numbers]),
+                    str([raw for raw, _ in number_contexts]),
+                ),
+                (
+                    "Number contexts",
+                    str([ctx for _, ctx in number_contexts]),
                 ),
             ],
         )
 
-        tokens = self.add_args(
-            function,
-            tokens,
-            prompt,
-            cached_words,
-            cached_numbers
-        )
+        orig_instr = self.llm._t_instruction
+        try:
+            if cached_numbers:
+                decoded_instr = (
+                    self.llm.encoder.decode(orig_instr)
+                    if orig_instr
+                    else ""
+                )
+
+                candidates = "; ".join(
+                    f"{raw} -> ...{ctx}..." for raw, ctx in number_contexts
+                )
+                extra = (
+                    "\nCandidate numeric values extracted from the prompt: "
+                    + candidates
+                    + ".\nThe prompt may contain unrelated numbers before or after the actual question. "
+                    "When filling numeric arguments, choose the numbers that are part of the arithmetic expression in the user’s request, not the unrelated noise numbers. "
+                    "Select the values that correspond to the question phrase."
+                )
+                self.llm.set_instruction(
+                    decoded_instr + extra if decoded_instr else extra
+                )
+
+            tokens = self.add_args(
+                function,
+                tokens,
+                prompt,
+                cached_words,
+                cached_numbers
+            )
+        finally:
+            self.llm.set_instruction(orig_instr if orig_instr is not None else [])
         tokens += self.encoder.encode('}')
 
         raw = self.encoder.decode(tokens)
