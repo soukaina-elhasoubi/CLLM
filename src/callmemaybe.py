@@ -122,11 +122,13 @@ class CallMeMaybe(BaseModel):
                 return self.encoder.encode(pattern)
 
         match = re.search(r"['\"](\w+)['\"]", text)
-        # match = re.search(r'["\']([^"\']+)["\']', text)
         if match:
-            return self.encoder.encode(match.group(1))
+            matched = match.group(1)
+            if 'word' in words or 'words' in words:
+                return self.encoder.encode(r'\\b' + re.escape(matched) + r'\\b')
+            return self.encoder.encode(matched)
 
-        return self.encoder.encode(r'\w+')
+        return self.encoder.encode(r'\\w+')
 
     def _decode_prompt(self, prompt: str) -> str:
         try:
@@ -150,14 +152,17 @@ class CallMeMaybe(BaseModel):
                 return self.encoder.encode('NUMBERS')
 
         if arg_name_lower in {'source_string', 's'}:
-            match = re.search(
+            matches = re.findall(
                 "\"([^\"]*)\"|'([^']*)'",
                 decoded_prompt,
             )
-            if match:
-                return self.encoder.encode(
-                    match.group(1) or match.group(2) or ''
-                )
+            if matches:
+                longest = ''
+                for group1, group2 in matches:
+                    candidate = group1 or group2 or ''
+                    if len(candidate) > len(longest):
+                        longest = candidate
+                return self.encoder.encode(longest)
 
         if arg_name_lower == 'name':
             match = re.search(r'\b(?:greet|hello|hi|hey)\s+([^\s"\']+)', decoded_prompt, re.I)
