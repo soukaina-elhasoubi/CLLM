@@ -12,8 +12,6 @@ SUPPORTED_TYPES = {
     "integer",
     "float",
     "boolean",
-    "object",
-    "array",
 }
 
 

@@ -125,14 +125,17 @@ class CallMeMaybe(BaseModel):
         if match:
             matched = match.group(1)
             if 'word' in words or 'words' in words:
-                return self.encoder.encode(r'\\b' + re.escape(matched) + r'\\b')
+                return self.encoder.encode(
+                    r'\\b' + re.escape(matched) + r'\\b'
+                )
             return self.encoder.encode(matched)
 
         return self.encoder.encode(r'\\w+')
 
     def _decode_prompt(self, prompt: str) -> str:
         try:
-            return json.loads(f'"{prompt}"')
+            decoded = json.loads(f'"{prompt}"')
+            return decoded if isinstance(decoded, str) else str(decoded)
         except Exception:
             return prompt.replace('\\"', '"')
 
@@ -165,7 +168,11 @@ class CallMeMaybe(BaseModel):
                 return self.encoder.encode(longest)
 
         if arg_name_lower == 'name':
-            match = re.search(r'\b(?:greet|hello|hi|hey)\s+([^\s"\']+)', decoded_prompt, re.I)
+            match = re.search(
+                r'\b(?:greet|hello|hi|hey)\s+([^\s"\']+)',
+                decoded_prompt,
+                re.I
+            )
             if match:
                 return self.encoder.encode(match.group(1))
 
@@ -190,16 +197,14 @@ class CallMeMaybe(BaseModel):
             "float",
             "string",
             "boolean",
-            "object",
-            "array",
         }
 
         # def add_value(
-        #     schema: dict[str, object] | str,
+        #     schema: dict[str, str] | str,
         #     current_tokens: list[int],
         # ) -> list[int]:
         def add_value(
-            schema: dict[str, object] | str,
+            schema: dict[str, str] | str,
             arg_name: str,
             current_tokens: list[int],
         ) -> list[int]:
@@ -214,16 +219,6 @@ class CallMeMaybe(BaseModel):
                 raise ValueError(
                     f"Unsupported parameter type: {arg_type}"
                 )
-
-            # For mandatory requirements we do not expand complex types.
-            # Output minimal placeholders for object/array to keep behavior simple
-            if arg_type == "object":
-                current_tokens += self.encoder.encode('{}')
-                return current_tokens
-
-            if arg_type == "array":
-                current_tokens += self.encoder.encode('[]')
-                return current_tokens
 
             # arg_name_lower = str(schema).lower()
             arg_name_lower = arg_name.lower()
@@ -489,7 +484,9 @@ class CallMeMaybe(BaseModel):
                     cached_numbers = phrase_numbers[:len(function.param_names)]
 
         import re as _re
-        NUMBER_PATTERN = _re.compile(r'(?<![\w.])[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?![\w.])')
+        NUMBER_PATTERN = _re.compile(
+            r'(?<![\w.])[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?![\w.])'
+        )
         number_contexts: list[tuple[str, str]] = []
         for m in NUMBER_PATTERN.finditer(prompt):
             raw_number = m.group(0).strip()
@@ -526,14 +523,18 @@ class CallMeMaybe(BaseModel):
                 )
 
                 candidates = "; ".join(
-                    f"{raw} -> ...{ctx}..." for raw, ctx in number_contexts
+                    f"{raw} -> ...{ctx}..."
+                    for raw, ctx in number_contexts
                 )
                 extra = (
                     "\nCandidate numeric values extracted from the prompt: "
                     + candidates
-                    + ".\nThe prompt may contain unrelated numbers before or after the actual question. "
-                    "When filling numeric arguments, choose the numbers that are part of the arithmetic expression in the user’s request, not the unrelated noise numbers. "
-                    "Select the values that correspond to the question phrase."
+                    + ".\nThe prompt may contain unrelated numbers before "
+                    "or after the actual question. When filling numeric "
+                    "arguments, choose the numbers that are part of the "
+                    "arithmetic expression in the user’s request, not the "
+                    "unrelated noise numbers. Select the values that "
+                    "correspond to the question phrase."
                 )
                 self.llm.set_instruction(
                     decoded_instr + extra if decoded_instr else extra
@@ -547,7 +548,8 @@ class CallMeMaybe(BaseModel):
                 cached_numbers
             )
         finally:
-            self.llm.set_instruction(orig_instr if orig_instr is not None else [])
+            instruction = orig_instr if orig_instr is not None else []
+            self.llm.set_instruction(instruction)
         tokens += self.encoder.encode('}')
 
         raw = self.encoder.decode(tokens)
