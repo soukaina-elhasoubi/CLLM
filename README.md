@@ -4,22 +4,22 @@
 
 ## Description
 
-**Call me Maybe** is a Python project implementing a lightweight function-calling system powered by a local Large Language Model (LLM).
+**Call me Maybe** is a Python project that turns natural-language prompts into structured function calls using a local Large Language Model (LLM) and constrained decoding.
 
-Instead of generating free-form text, the program converts natural language requests into structured JSON function calls. Given a set of function definitions, it selects the most appropriate function and generates arguments that respect the expected parameter types.
+Instead of returning free-form text, the program reads a list of available function definitions, identifies the most relevant function, generates the matching arguments, and writes a valid JSON object to disk. The implementation is designed to be robust, deterministic, and schema-aware while keeping the logic readable and easy to extend.
 
-The project relies on the provided **llm_sdk** wrapper around **Qwen/Qwen3-0.6B** and uses **constrained decoding** to ensure that only valid function names and argument values are generated.
+The current project uses the provided **llm_sdk** wrapper around **Qwen/Qwen3-0.6B**, a custom tokenizer built from a vocabulary trie, and Pydantic models to validate function metadata and internal state.
 
-Whenever a request cannot be matched to one of the available functions, the program falls back to the dedicated **`fn_unknown`** function, guaranteeing that every prompt produces a valid output.
+Whenever no function clearly matches the request, the program falls back to **`fn_unknown`**, ensuring that every prompt still yields a valid tool call.
 
 ---
 
 # Features
 
-- Local LLM inference using the provided SDK.
-- Trie-based tokenizer for efficient encoding.
-- Constrained decoding for function selection.
-- Automatic argument generation.
+- Local LLM inference through the provided SDK.
+- Custom tokenizer and trie-based encoder for efficient token lookup.
+- Constrained decoding for function selection and argument generation.
+- Pydantic-based validation for function definitions and internal objects.
 - Support for:
   - strings
   - integers
@@ -27,11 +27,11 @@ Whenever a request cannot be matched to one of the available functions, the prog
   - booleans
   - regular expressions
   - file paths
-- JSON validation.
-- Input validation.
-- Graceful error handling with `exit(1)`.
-- Logits caching for faster inference.
-- Automatic fallback to `fn_unknown`.
+- JSON output generation with schema validation.
+- Graceful error handling for malformed input, missing files, invalid JSON, and unexpected failures.
+- Logits caching for faster repeated inference.
+- Optional CLI flags for choosing a model and device.
+- A small unittest suite under the **tests/** directory for encoder and function validation contracts.
 
 ---
 
@@ -40,6 +40,8 @@ Whenever a request cannot be matched to one of the available functions, the prog
 - Python 3.10+
 - uv
 - llm_sdk (provided)
+- numpy
+- pydantic
 
 ---
 
@@ -71,8 +73,6 @@ or
 uv run python -m src
 ```
 
----
-
 Run with custom files:
 
 ```bash
@@ -80,6 +80,14 @@ uv run python -m src \
     --functions_definition data/input/functions_definition.json \
     --input data/input/function_calling_tests.json \
     --output data/output/function_calling_results.json
+```
+
+You can also override the model and device used by the SDK:
+
+```bash
+uv run python -m src \
+    --model_name Qwen/Qwen3-0.6B \
+    --device cpu
 ```
 
 ---
@@ -98,50 +106,46 @@ make debug
 make lint
 ```
 
+or, with stricter checks:
+
+```bash
+make lint-strict
+```
+
 ---
 
-# Project workflow
+# Algorithm explanation
 
-The program follows four main steps.
+The generation process follows four main steps.
 
 ## 1. Load resources
 
-The application:
+The application loads:
 
-- loads the LLM;
-- loads the tokenizer vocabulary;
-- builds the tokenizer trie;
-- loads every function definition.
+- the tokenizer vocabulary;
+- the LLM wrapper;
+- the function definitions;
+- the instruction templates used to guide tool selection.
 
-Each function definition is encoded only once during initialization.
-
----
+Each function schema is encoded once and reused throughout the run.
 
 ## 2. Select the function
 
-A system prompt containing every available function is constructed.
-
-The language model is **not** allowed to generate arbitrary text.
-
-Instead, it must choose only among the available function names using constrained decoding.
-
----
+The system prompt exposes the available tools to the model. The generation loop does not allow arbitrary free text at this stage; instead, it restricts the next-token choices to valid function names and valid JSON fragments. This is the constrained decoding step that makes the output reliable.
 
 ## 3. Generate arguments
 
-After selecting the function, every parameter is generated independently according to its expected type.
+Once the function is selected, each parameter is filled according to its expected type.
 
 ### Strings
 
-Candidate strings are extracted directly from the user's prompt.
+Candidate strings are extracted from the prompt and reused as valid argument values.
 
 ### Numbers
 
-Numbers are extracted using regular expressions and normalized before insertion into the JSON output.
+Numbers are extracted with regular expressions and normalized so they can be stored as JSON numbers. The implementation supports forms such as:
 
-Supported formats include:
-
-```
+```text
 12
 -15
 +8
@@ -152,92 +156,58 @@ Supported formats include:
 5.
 ```
 
-which become:
-
-```
-12.0
--15.0
-8.0
-3.14
--8.5
-0.25
--0.5
-5.0
-```
+and converts them to normalized JSON-friendly values.
 
 ### Booleans
 
-Only the valid JSON values
+Only the valid JSON literals
 
-```
+```text
 true
 false
 ```
 
-can be generated.
+are accepted.
 
-### Regular expressions
+### Regex, paths and other special values
 
-Regex parameters are inferred from keywords contained in the prompt.
-
-Examples:
-
-- digits
-- letters
-- uppercase
-- lowercase
-- vowels
-- whitespace
-- punctuation
-
-
----
+The project also extracts regex patterns, file-system paths, and other prompt-derived values when the function schema requires them.
 
 ## 4. Produce the result
 
-The generated function call is assembled into a valid JSON object and written to the output file.
+The final structure is assembled as a JSON object with the keys **prompt**, **name**, and **parameters**, then written to the output file.
 
 ---
 
 # Design choices
 
-Several implementation decisions were made to keep the project deterministic and compliant with the subject.
+Several implementation decisions were made to keep the project deterministic and aligned with the assignment requirements.
 
-- Custom tokenizer implemented from the provided vocabulary.
-- Trie structure for efficient token lookup.
-- Function definitions encoded only once.
-- Cached logits to avoid repeated model evaluations.
-- Constrained decoding instead of unrestricted generation.
-- Strict JSON generation.
-- Automatic numeric normalization.
-- Pydantic models for internal data representation.
-- Dedicated fallback function (`fn_unknown`).
+- A custom tokenizer implemented from the provided vocabulary.
+- A trie structure for efficient token lookup.
+- Pydantic-based validation for function definitions and internal state.
+- Constrained decoding rather than free-form generation.
+- Cached logits to avoid repeating expensive model evaluations.
+- Explicit fallback to **`fn_unknown`** when the prompt is ambiguous or unsupported.
+- Clear input validation and user-facing error messages.
 
 ---
 
 # Input validation
 
-Before processing any request, the application validates every input file.
+Before every run, the application validates its inputs.
 
 The program checks:
 
 - input files exist;
 - JSON syntax is valid;
-- vocabulary can be loaded;
-- `functions_definition.json` contains a list;
-- every function has:
-  - a name;
-  - valid parameters;
-  - valid return type;
+- the vocabulary can be loaded;
+- `functions_definition.json` contains a list of function objects;
+- every function has a valid name, parameter schema and return type;
 - duplicate function names are rejected;
-- `function_calling_tests.json` contains a non-empty list;
-- every test contains a `"prompt"` field of type `string`.
+- `function_calling_tests.json` contains a non-empty list of objects with a string `prompt` field.
 
-Invalid inputs immediately terminate the program with:
-
-```text
-exit(1)
-```
+Invalid inputs terminate the program with a clear error message and exit status `1`.
 
 ---
 
@@ -254,32 +224,45 @@ The application explicitly handles:
 - invalid tool calls;
 - vocabulary loading failures.
 
-Unexpected exceptions also terminate the program safely.
+Unexpected exceptions are also caught and reported cleanly so the program does not fail silently.
 
 ---
 
 # Performance
 
-The implementation minimizes unnecessary computations.
+The implementation minimizes unnecessary computation while preserving reliability.
 
 Performance improvements include:
 
 - trie-based token lookup;
 - cached logits;
-- single encoding of function definitions;
-- constrained decoding;
-- pre-extracted numbers;
-- pre-extracted words.
+- single encoding of the function schemas;
+- constrained decoding to reduce the search space;
+- prompt-based extraction of numbers and words.
 
-Only valid candidates are evaluated during decoding, significantly reducing the search space.
+The result is a reasonable balance between speed, correctness and robustness, even when using a small local model.
 
 ---
 
 # Limitations
 
-The quality of the generated function depends on the underlying language model.
+The quality of the generated function call still depends on the underlying language model and the clarity of the prompt.
 
-Although constrained decoding guarantees valid outputs, the selected function may occasionally differ from the user's intention for ambiguous prompts.
+Although constrained decoding guarantees valid JSON and schema-compliant arguments, ambiguous prompts may still lead to a plausible but different function choice than the one a human would expect.
+
+---
+
+# Testing strategy
+
+A small unittest suite is included in the **tests/** directory to validate the most important contracts of the project.
+
+Current tests cover:
+
+- encoder round-trip behavior;
+- word-sequence extraction;
+- function validation for blank names, descriptions and parameter types.
+
+These tests help catch regressions in the tokenizer and the function wrapper without requiring the full model pipeline to run.
 
 ---
 
@@ -304,8 +287,6 @@ Output
 }
 ```
 
----
-
 Unknown request
 
 ```text
@@ -316,7 +297,7 @@ Output
 
 ```json
 {
-    "prompt": "What is my age",
+    "prompt": "Book me a flight to Tokyo tomorrow.",
     "name": "fn_unknown",
     "parameters": {}
 }
@@ -324,14 +305,27 @@ Output
 
 ---
 
+# Bonus features
+
+The current implementation includes a few extras beyond the base assignment requirements:
+
+- CLI support for selecting the model and device;
+- logits caching to speed up repeated generation steps;
+- richer extraction for paths, regexes and prompt-derived tokens;
+- a dedicated unittest suite for the core encoder and function validation logic;
+- robust error reporting for the main execution path.
+
+---
+
 # Project structure
 
-```
+```text
 .
 ├── data
 │   ├── input
 │   └── output
 ├── llm_sdk
+├── moulinette
 ├── src
 │   ├── __main__.py
 │   ├── callmemaybe.py
@@ -339,6 +333,7 @@ Output
 │   ├── function.py
 │   ├── llm.py
 │   └── __init__.py
+├── tests
 ├── Makefile
 ├── pyproject.toml
 ├── uv.lock
@@ -364,8 +359,6 @@ Artificial intelligence was used during the development of this project as a lea
 
 AI was mainly used to:
 
-- understand constrained decoding;
-- identify edge cases;
-- review algorithms.
+- understand constrained decoding and the project's concepts;
 
-All generated suggestions were manually reviewed, adapted, tested and integrated by <i>sel-haso</i> before submission.
+All generated suggestions were manually reviewed, adapted, tested and integrated by **sel-haso** before being kept in the project.
