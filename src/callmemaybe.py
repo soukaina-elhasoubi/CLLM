@@ -1,5 +1,7 @@
 import json
-import re
+# import re
+import re as _re
+
 
 from pydantic import BaseModel
 
@@ -113,25 +115,6 @@ class CallMeMaybe(BaseModel):
         new += self.t_instruction_suffix
         self.llm.set_instruction(new)
 
-    def regex_pattern(self, text: str) -> list[int]:
-        """Resolves the regex pattern from prompt keywords."""
-
-        words = {w.strip('\'\".,!?').lower() for w in text.split()}
-        for keywords, pattern in REGEX_MAPPING:
-            if words & set(keywords):
-                return self.encoder.encode(pattern)
-
-        match = re.search(r"['\"](\w+)['\"]", text)
-        if match:
-            matched = match.group(1)
-            if 'word' in words or 'words' in words:
-                return self.encoder.encode(
-                    r'\\b' + re.escape(matched) + r'\\b'
-                )
-            return self.encoder.encode(matched)
-
-        return self.encoder.encode(r'\\w+')
-
     def _decode_prompt(self, prompt: str) -> str:
         try:
             decoded = json.loads(f'"{prompt}"')
@@ -145,37 +128,6 @@ class CallMeMaybe(BaseModel):
         prompt: str,
         cached_words: list[list[int]],
     ) -> list[int] | None:
-        decoded_prompt = self._decode_prompt(prompt)
-        arg_name_lower = arg_name.lower()
-
-        if arg_name_lower == 'replacement':
-            if 'asterisk' in decoded_prompt.lower():
-                return self.encoder.encode('*')
-            if 'numbers' in decoded_prompt.lower():
-                return self.encoder.encode('NUMBERS')
-
-        if arg_name_lower in {'source_string', 's'}:
-            matches = re.findall(
-                "\"([^\"]*)\"|'([^']*)'",
-                decoded_prompt,
-            )
-            if matches:
-                longest = ''
-                for group1, group2 in matches:
-                    candidate = group1 or group2 or ''
-                    if len(candidate) > len(longest):
-                        longest = candidate
-                return self.encoder.encode(longest)
-
-        if arg_name_lower == 'name':
-            match = re.search(
-                r'\b(?:greet|hello|hi|hey)\s+([^\s"\']+)',
-                decoded_prompt,
-                re.I
-            )
-            if match:
-                return self.encoder.encode(match.group(1))
-
         if len(cached_words) == 1:
             return cached_words[0]
 
@@ -199,10 +151,6 @@ class CallMeMaybe(BaseModel):
             "boolean",
         }
 
-        # def add_value(
-        #     schema: dict[str, str] | str,
-        #     current_tokens: list[int],
-        # ) -> list[int]:
         def add_value(
             schema: dict[str, str] | str,
             arg_name: str,
@@ -220,11 +168,21 @@ class CallMeMaybe(BaseModel):
                     f"Unsupported parameter type: {arg_type}"
                 )
 
-            # arg_name_lower = str(schema).lower()
             arg_name_lower = arg_name.lower()
+
             if arg_name_lower == "regex":
+                regex_options = [
+                    self.encoder.encode(pattern)
+                    for _, pattern in REGEX_MAPPING
+                ]
+
                 current_tokens += self.encoder.encode('"')
-                current_tokens += self.regex_pattern(text)
+
+                current_tokens += self.llm.next_option(
+                    current_tokens,
+                    regex_options,
+                )
+
                 current_tokens += self.encoder.encode('"')
                 return current_tokens
 
@@ -338,7 +296,6 @@ class CallMeMaybe(BaseModel):
 
             tokens += self.encoder.encode(f'"{arg_name}": ')
             tokens = add_value(arg_schema, arg_name, tokens)
-            # tokens = add_value(arg_schema, tokens)
 
         tokens += self.encoder.encode("}\n")
 
@@ -455,35 +412,6 @@ class CallMeMaybe(BaseModel):
         cached_words = self.encoder.encode_words_separated(prompt)
         cached_numbers = self.encoder.encode_numbers(prompt)
 
-        lower_prompt = prompt.lower()
-        if (
-            len(function.param_names) == 2
-            and all(
-                function.params[name] in {"number", "integer", "float"}
-                for name in function.param_names
-            )
-        ):
-            keywords = [
-                "what is the sum of",
-                "sum of",
-                "difference between",
-                "difference of",
-                "product of",
-            ]
-            best_kw = None
-            best_idx = -1
-            for kw in keywords:
-                idx = lower_prompt.rfind(kw)
-                if idx > best_idx:
-                    best_idx = idx
-                    best_kw = kw
-            if best_kw is not None:
-                sub_prompt = prompt[best_idx + len(best_kw):]
-                phrase_numbers = self.encoder.encode_numbers(sub_prompt)
-                if len(phrase_numbers) >= len(function.param_names):
-                    cached_numbers = phrase_numbers[:len(function.param_names)]
-
-        import re as _re
         NUMBER_PATTERN = _re.compile(
             r'(?<![\w.])[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?![\w.])'
         )
@@ -529,12 +457,9 @@ class CallMeMaybe(BaseModel):
                 extra = (
                     "\nCandidate numeric values extracted from the prompt: "
                     + candidates
-                    + ".\nThe prompt may contain unrelated numbers before "
-                    "or after the actual question. When filling numeric "
-                    "arguments, choose the numbers that are part of the "
-                    "arithmetic expression in the user’s request, not the "
-                    "unrelated noise numbers. Select the values that "
-                    "correspond to the question phrase."
+                    + ".\nChoose the numbers belonging to the arithmetic "
+                    "expression in the user’s request. Ignore unrelated "
+                    "numbers."
                 )
                 self.llm.set_instruction(
                     decoded_instr + extra if decoded_instr else extra
@@ -564,8 +489,6 @@ class CallMeMaybe(BaseModel):
             raise ValueError("Invalid tool call generated")
 
         tool_json = raw[start:]
-        # tool_json = raw[raw.find('{"name":'):]
-        # print(tool_json)
 
         end = tool_json.rfind("}")
 
@@ -574,7 +497,6 @@ class CallMeMaybe(BaseModel):
 
         tool_json = tool_json[:end + 1]
 
-        # data = json.loads(tool_json)
         try:
             data = json.loads(tool_json)
         except json.JSONDecodeError:
@@ -584,7 +506,6 @@ class CallMeMaybe(BaseModel):
             tool_json.index('"arguments":') + len('"arguments": ')
             )
         arguments_text = tool_json[arguments_start:-1].strip()
-        # print(data)
 
         return (
             '\t{\n'

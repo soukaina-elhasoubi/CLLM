@@ -100,6 +100,10 @@ if __name__ == "__main__":
 
         print('Finished.')
 
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        exit(130)
+
     except FileNotFoundError as e:
         print(f"File not found: {e.filename}")
         exit(1)

@@ -41,10 +41,6 @@ class Function(BaseModel):
         if not isinstance(function, dict):
             raise ValueError("Function definition must be an object.")
 
-        # --------------------------------------------------
-        # name
-        # --------------------------------------------------
-
         name = function.get("name")
 
         if not isinstance(name, str) or not name.strip():
@@ -52,10 +48,6 @@ class Function(BaseModel):
 
         self._name = name.strip()
         self._t_name = encoder.encode(self._name)
-
-        # --------------------------------------------------
-        # description
-        # --------------------------------------------------
 
         description = function.get("description")
 
@@ -66,10 +58,6 @@ class Function(BaseModel):
 
         self._description = description.strip()
         self._t_description = encoder.encode(self._description)
-
-        # --------------------------------------------------
-        # parameters
-        # --------------------------------------------------
 
         parameters = function.get("parameters")
 
@@ -132,8 +120,6 @@ class Function(BaseModel):
             )
 
         self._return_type = normalized_return_type
-
-        # --------------------------------------------------
 
         self._t_definition = encoder.encode(
             self._to_tool_schema()

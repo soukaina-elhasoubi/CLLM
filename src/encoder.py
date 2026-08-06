@@ -136,11 +136,8 @@ class Encoder(BaseModel):
             if not token_ids:
                 token_ids = self.encode(n)
 
-            # print(f'{n} -> {token_ids}')
-
             if token_ids:
                 ids.append(token_ids)
-        # print(NUMBER_PATTERN.findall(text))
         return ids
 
     def extract_path(self, text: str) -> list[int]:

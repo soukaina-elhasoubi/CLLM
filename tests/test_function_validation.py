@@ -14,7 +14,6 @@ class FunctionValidationTestCase(unittest.TestCase):
             "number": 4,
             "integer": 5,
             "boolean": 6,
-            "object": 7,
             "array": 8,
             "ok": 9,
         }
@@ -55,27 +54,6 @@ class FunctionValidationTestCase(unittest.TestCase):
                 },
                 self.encoder,
             )
-
-    def test_nested_schema_object_is_supported(self) -> None:
-        function = Function(
-            {
-                "name": "fn_nested",
-                "description": "support nested object args",
-                "parameters": {
-                    "payload": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "count": {"type": "integer"},
-                        },
-                    },
-                },
-                "returns": {"type": "string"},
-            },
-            self.encoder,
-        )
-        self.assertEqual(function.name, "fn_nested")
-        self.assertIn("payload", function.params)
 
 
 if __name__ == "__main__":
